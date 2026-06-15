@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block nav_admin %}active{% endblock %}
+{% block title %}Indexation — Succession DUPONT{% endblock %}
+
+{% block content %}
+<div class="panel">
+  <h1>Indexation</h1>
+  <p class="muted">
+    Provider embedding : <strong>{{ embed_provider }}</strong> ·
+    Provider chat : <strong>{{ chat_provider }}</strong> ·
+    ChromaDB : {% if chroma_ok %}<span class="ok">joignable</span>{% else %}<span class="ko">injoignable</span>{% endif %}
+  </p>
+  <p class="muted">
+    L'indexation parse les emails, extrait le texte des pièces jointes « faciles »
+    (PDF natif, DOCX, RTF), découpe en chunks et calcule les embeddings dans ChromaDB.
+    Les PDF scannés sont marqués « OCR requis » (traités au jalon 2).
+  </p>
+
+  {# ─── Zone d'ajout de fichiers ──────────────────────────────────────── #}
+  <div class="panel" id="upload-panel" style="margin-bottom:1rem; border:2px dashed var(--border); background:#fafaf8;">
+    <h3 style="margin-top:0; font-size:0.95rem;">Ajouter des fichiers à indexer</h3>
+    <p class="muted" style="margin-bottom:0.6rem; font-size:0.85rem;">
+      Déposez des fichiers <strong>.eml</strong> (emails) ici ou cliquez pour les sélectionner.
+      Ils seront copiés dans <code>data/uploads/</code> puis pris en compte au prochain lancement de l'indexation.
+    </p>
+    <div id="drop-zone"
+         style="border:2px dashed #c9c5ba; border-radius:8px; padding:1.5rem; text-align:center;
+                color:var(--muted); cursor:pointer; transition:background 0.15s;"
+         ondragover="event.preventDefault(); this.style.background='#f0eeea';"
+         ondragleave="this.style.background='';"
+         ondrop="handleDrop(event)">
+      <span id="drop-label">Glissez vos fichiers <strong>.eml</strong> ici, ou <u>cliquez pour parcourir</u></span>
+      <input type="file" id="file-input" accept=".eml" multiple style="display:none">
+    </div>
+    <div id="upload-result" style="margin-top:0.6rem; font-size:0.85rem; display:none;"></div>
+  </div>
+
+  <div class="eval-form-grid" style="margin-bottom:0.8rem; max-width:480px;">
+    <label>Provider enrichissement
+      <select id="enrich-provider" class="eval-select">
+        {% for p in available_providers %}
+        <option value="{{ p }}"{% if p == "mistral" %} selected{% endif %}>{{ p }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Modèle
+      <select id="enrich-model" class="eval-select">
+        <option value="">Chargement…</option>
+      </select>
+    </label>
+  </div>
+
+  <div style="display:flex; gap:0.8rem; align-items:center; flex-wrap:wrap;">
+    <button id="startbtn">Lancer l'indexation</button>
+    <button id="resetbtn" class="btn-secondary" title="Vide ChromaDB et le registre SQLite pour repartir de zéro">🗑 Réinitialiser l'index</button>
+  </div>
+  <p id="resetmsg" class="muted" style="display:none; margin-top:0.5rem;"></p>
+
+  <div id="progress" style="display:none; margin-top:1rem;">
+    <div><strong id="phase">—</strong> <span id="counter" class="muted"></span></div>
+    <div class="progressbar"><div id="bar"></div></div>
+    <div class="muted" id="currentdoc"></div>
+    <div class="logbox" id="logbox"></div>
+  </div>
+</div>
+
+{# ─── Migration / sauvegarde des bases ─────────────────────────────────── #}
+<div class="panel">
+  <h2>Migration / Sauvegarde</h2>
+  <p class="muted">
+    Exporte les <strong>vecteurs ChromaDB</strong> (déjà calculés), la base
+    <strong>SQLite</strong> (registre, graphe, enrichissement, évaluations), les pièces
+    jointes et le texte OCR dans une archive <code>.zip</code>. À l'import sur un autre
+    poste, tout est réinjecté <strong>sans repayer l'indexation</strong>.
+    Les clés API ne sont <strong>pas</strong> incluses.
+  </p>
+  <p class="muted" style="font-size:0.85rem;">
+    ⚠️ Avant d'importer : configurez le <strong>même modèle d'embedding</strong> que
+    celui de l'archive (menu <a href="/settings">Réglages</a>).
+  </p>
+
+  <div style="display:flex; gap:0.8rem; align-items:center; flex-wrap:wrap;">
+    <label style="display:flex; align-items:center; gap:0.4rem; font-size:0.9rem;">
+      <input type="checkbox" id="export-sources" checked> inclure les emails sources .eml
+    </label>
+    <button id="exportbtn">⬇ Exporter (.zip)</button>
+
+    <input type="file" id="import-input" accept=".zip" style="display:none">
+    <button id="importbtn" class="btn-secondary">⬆ Importer une archive…</button>
+  </div>
+  <p id="migratemsg" class="muted" style="display:none; margin-top:0.6rem;"></p>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='admin.js') }}"></script>
+{% endblock %}

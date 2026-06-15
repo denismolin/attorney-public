@@ -1,0 +1,290 @@
+{% extends "base.html" %}
+{% block nav_eval %}active{% endblock %}
+{% block title %}Évaluation RAG — Succession DUPONT{% endblock %}
+
+{% block content %}
+<div class="panel">
+  <h1>Évaluation RAG</h1>
+  {% if not chroma_ok %}
+  <p class="warn">⚠️ ChromaDB injoignable. Le corpus n'est pas accessible — la génération et l'évaluation échoueront.</p>
+  {% endif %}
+
+  <!-- Barre d'onglets -->
+  <div class="tab-bar">
+    <button class="tab-btn active" data-tab="dataset">Dataset <span id="dataset-count" class="badge autre"></span></button>
+    <button class="tab-btn" data-tab="generate">Générer</button>
+    <button class="tab-btn" data-tab="evaluate">Évaluer</button>
+    <button class="tab-btn" data-tab="report">Rapport</button>
+  </div>
+
+  <!-- ================================================================ DATASET -->
+  <div id="tab-dataset" class="tab-content">
+    <div class="eval-toolbar">
+      <select id="filter-category" class="eval-select">
+        <option value="">Toutes catégories</option>
+        <option value="factual">Factuel</option>
+        <option value="procedural">Procédural</option>
+        <option value="comparative">Comparatif</option>
+        <option value="temporal">Temporel</option>
+        <option value="synthetic">Synthétique</option>
+      </select>
+      <select id="filter-difficulty" class="eval-select">
+        <option value="">Toutes difficultés</option>
+        <option value="easy">Facile</option>
+        <option value="medium">Moyen</option>
+        <option value="hard">Difficile</option>
+      </select>
+      <button id="apply-filters" class="btn-secondary">Filtrer</button>
+      <span class="eval-spacer"></span>
+      <label class="btn-secondary" style="cursor:pointer;" title="Importer un fichier JSON">
+        📥 Importer
+        <input type="file" id="import-file" accept=".json" style="display:none;">
+      </label>
+      <button id="export-btn" class="btn-secondary">📤 Exporter</button>
+      <button id="clear-dataset-btn" class="btn-secondary" style="color:#c62828; border-color:#f0c98a;">🗑 Effacer tout</button>
+    </div>
+
+    <div id="questions-table-wrap">
+      <table class="maillist" id="questions-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Question</th>
+            <th>Réponse attendue</th>
+            <th>Catégorie</th>
+            <th>Difficulté</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="questions-tbody">
+          <tr><td colspan="6" class="muted" style="text-align:center;">Chargement…</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Formulaire ajout manuel -->
+    <details class="eval-add-form" style="margin-top:1rem;">
+      <summary class="btn-secondary" style="cursor:pointer; display:inline-block;">➕ Ajouter une question manuellement</summary>
+      <div style="margin-top:.8rem; display:grid; gap:.6rem;">
+        <input id="add-question" type="text" placeholder="Question…" class="eval-input">
+        <textarea id="add-expected" rows="3" placeholder="Réponse attendue…" class="eval-input"></textarea>
+        <div style="display:flex; gap:.6rem; flex-wrap:wrap;">
+          <select id="add-category" class="eval-select">
+            <option value="factual">Factuel</option>
+            <option value="procedural">Procédural</option>
+            <option value="comparative">Comparatif</option>
+            <option value="temporal">Temporel</option>
+            <option value="synthetic">Synthétique</option>
+          </select>
+          <select id="add-difficulty" class="eval-select">
+            <option value="easy">Facile</option>
+            <option value="medium" selected>Moyen</option>
+            <option value="hard">Difficile</option>
+          </select>
+          <button id="add-question-btn">Ajouter</button>
+        </div>
+      </div>
+    </details>
+  </div>
+
+  <!-- ================================================================ GÉNÉRER -->
+  <div id="tab-generate" class="tab-content" style="display:none;">
+    <p class="muted">Génère des questions de référence à partir des chunks indexés dans ChromaDB.</p>
+    <div class="eval-form-grid">
+      <label>Provider LLM
+        <select id="gen-provider" class="eval-select">
+          {% for p in available_providers %}
+          <option value="{{ p }}">{{ p }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Modèle
+        <select id="gen-model" class="eval-select">
+          <option value="">Chargement…</option>
+        </select>
+      </label>
+      <label>Nombre de questions
+        <input id="gen-n" type="number" value="10" min="1" max="200" class="eval-input">
+      </label>
+    </div>
+
+    <div style="margin-top:.8rem; display:flex; gap:2rem; flex-wrap:wrap;">
+      <fieldset class="eval-checks">
+        <legend>Catégories</legend>
+        <label><input type="checkbox" class="cat-check" value="factual" checked> Factuel</label>
+        <label><input type="checkbox" class="cat-check" value="procedural" checked> Procédural</label>
+        <label><input type="checkbox" class="cat-check" value="comparative" checked> Comparatif</label>
+        <label><input type="checkbox" class="cat-check" value="temporal" checked> Temporel</label>
+        <label><input type="checkbox" class="cat-check" value="synthetic" checked> Synthétique</label>
+      </fieldset>
+      <fieldset class="eval-checks">
+        <legend>Difficultés</legend>
+        <label><input type="checkbox" class="diff-check" value="easy" checked> Facile</label>
+        <label><input type="checkbox" class="diff-check" value="medium" checked> Moyen</label>
+        <label><input type="checkbox" class="diff-check" value="hard" checked> Difficile</label>
+      </fieldset>
+    </div>
+
+    <div style="display:flex; gap:.8rem; align-items:center; margin-top:1rem; flex-wrap:wrap;">
+      <button id="gen-start-btn">Générer</button>
+      <button id="gen-cancel-btn" class="btn-secondary" style="display:none;">Annuler</button>
+    </div>
+
+    <div id="gen-progress" style="display:none; margin-top:1rem;">
+      <div><strong id="gen-phase">—</strong> <span id="gen-counter" class="muted"></span></div>
+      <div class="progressbar"><div id="gen-bar"></div></div>
+      <div class="logbox" id="gen-logbox"></div>
+    </div>
+  </div>
+
+  <!-- ================================================================ ÉVALUER -->
+  <div id="tab-evaluate" class="tab-content" style="display:none;">
+    <p class="muted">Lance une session d'évaluation LLM-as-judge sur tout ou partie du dataset.</p>
+    <div class="eval-form-grid">
+      <label>Provider juge
+        <select id="eval-provider" class="eval-select">
+          {% for p in available_providers %}
+          <option value="{{ p }}">{{ p }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Modèle juge
+        <select id="eval-model" class="eval-select">
+          <option value="">Chargement…</option>
+        </select>
+      </label>
+      <label>Seuil de réussite (0–10)
+        <div style="display:flex; align-items:center; gap:.5rem;">
+          <input id="eval-threshold" type="range" min="0" max="10" step="0.5" value="6" style="flex:1;">
+          <span id="eval-threshold-val" style="min-width:2rem; text-align:right;">6</span>
+        </div>
+      </label>
+    </div>
+
+    <p class="muted" style="margin-top:.5rem;">Questions à évaluer : <strong id="eval-q-count">toutes</strong></p>
+
+    <div style="display:flex; gap:.8rem; align-items:center; margin-top:.8rem; flex-wrap:wrap;">
+      <button id="eval-start-btn">Lancer l'évaluation</button>
+    </div>
+
+    <!-- Runs actifs -->
+    <div id="eval-active-runs" style="margin-top:1rem;"></div>
+
+    <!-- Historique des runs -->
+    <h3 style="margin-top:1.5rem;">Runs passés</h3>
+    <div id="runs-list" class="muted">Chargement…</div>
+  </div>
+
+  <!-- ================================================================ RAPPORT -->
+  <div id="tab-report" class="tab-content" style="display:none;">
+    <div style="display:flex; align-items:center; gap:1rem; flex-wrap:wrap; margin-bottom:1rem;">
+      <label>Run :
+        <select id="report-run-select" class="eval-select">
+          <option value="">— Choisir un run —</option>
+        </select>
+      </label>
+      <button id="report-load-btn" class="btn-secondary">Charger</button>
+      <span class="eval-spacer"></span>
+      <button id="dl-md-btn" class="btn-secondary" style="display:none;">⬇ Markdown</button>
+      <button id="dl-html-btn" class="btn-secondary" style="display:none;">⬇ HTML</button>
+    </div>
+
+    <div id="report-content" style="display:none;">
+      <!-- Cartes résumé -->
+      <div class="eval-cards" id="summary-cards"></div>
+
+      <!-- Graphiques Plotly -->
+      <div style="display:flex; gap:1rem; flex-wrap:wrap; margin-top:1rem;">
+        <div style="flex:1; min-width:280px;">
+          <h3>Distribution des scores</h3>
+          <div id="chart-dist" style="height:220px;"></div>
+        </div>
+        <div style="flex:1; min-width:280px;">
+          <h3>Tendance des runs</h3>
+          <div id="chart-trend" style="height:220px;"></div>
+        </div>
+      </div>
+
+      <!-- Filtres résultats -->
+      <div class="eval-toolbar" style="margin-top:1rem;">
+        <select id="report-filter-cat" class="eval-select">
+          <option value="">Toutes catégories</option>
+          <option value="factual">Factuel</option>
+          <option value="procedural">Procédural</option>
+          <option value="comparative">Comparatif</option>
+          <option value="temporal">Temporel</option>
+          <option value="synthetic">Synthétique</option>
+        </select>
+        <select id="report-filter-verdict" class="eval-select">
+          <option value="">Tous verdicts</option>
+          <option value="pass">Pass</option>
+          <option value="fail">Fail</option>
+        </select>
+        <select id="report-filter-diff" class="eval-select">
+          <option value="">Toutes difficultés</option>
+          <option value="easy">Facile</option>
+          <option value="medium">Moyen</option>
+          <option value="hard">Difficile</option>
+        </select>
+        <button id="report-apply-filters" class="btn-secondary">Filtrer</button>
+      </div>
+
+      <!-- Table des résultats -->
+      <div style="overflow-x:auto; margin-top:.8rem;">
+        <table class="maillist" id="results-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th colspan="5">Question / Attendu / Réponse RAG / Raisonnement</th>
+              <th>Score / Verdict</th>
+            </tr>
+          </thead>
+          <tbody id="results-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <p id="report-empty" class="muted">Choisissez un run pour afficher le rapport.</p>
+  </div>
+</div>
+
+<!-- Modal édition question -->
+<div id="edit-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:100; align-items:center; justify-content:center;">
+  <div class="panel" style="max-width:600px; width:90%; max-height:90vh; overflow-y:auto;">
+    <h2>Modifier la question</h2>
+    <input type="hidden" id="edit-q-id">
+    <div style="display:grid; gap:.6rem;">
+      <label>Question<input id="edit-question" type="text" class="eval-input"></label>
+      <label>Réponse attendue<textarea id="edit-expected" rows="4" class="eval-input"></textarea></label>
+      <div style="display:flex; gap:.6rem; flex-wrap:wrap;">
+        <select id="edit-category" class="eval-select">
+          <option value="factual">Factuel</option>
+          <option value="procedural">Procédural</option>
+          <option value="comparative">Comparatif</option>
+          <option value="temporal">Temporel</option>
+          <option value="synthetic">Synthétique</option>
+        </select>
+        <select id="edit-difficulty" class="eval-select">
+          <option value="easy">Facile</option>
+          <option value="medium">Moyen</option>
+          <option value="hard">Difficile</option>
+        </select>
+      </div>
+      <label>Notes<input id="edit-notes" type="text" class="eval-input"></label>
+    </div>
+    <div style="display:flex; gap:.6rem; margin-top:1rem;">
+      <button id="edit-save-btn">Enregistrer</button>
+      <button id="edit-cancel-btn" class="btn-secondary">Annuler</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.plot.ly/plotly-2.27.1.min.js"></script>
+<script>
+  // Passe les providers disponibles au JS
+  window.EVAL_PROVIDERS = {{ available_providers | tojson }};
+</script>
+<script src="{{ url_for('static', filename='eval.js') }}"></script>
+{% endblock %}

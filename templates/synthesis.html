@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}Synthèse — Succession DUPONT{% endblock %}
+{% block nav_synthesis %}active{% endblock %}
+
+{% block content %}
+<div class="panel">
+  <div class="chat-header">
+    <h1>Chatbot Synthèse</h1>
+    <div class="chat-actions">
+      <button type="button" id="synthcopybtn" class="btn-secondary" title="Copier toute la conversation">📋 Copier</button>
+      <button type="button" id="synthclearbtn" class="btn-secondary" title="Effacer la conversation">🗑 Effacer</button>
+    </div>
+  </div>
+  <p class="muted">
+    Construisez un narratif juridique sourcé sur l'ensemble du dossier DUPONT. Le chatbot
+    combine les données structurées (chronologie, déclarations, fils) et la recherche
+    plein texte pour rédiger des synthèses citant chaque source.
+  </p>
+</div>
+
+<div style="display:flex; gap:1.2rem; align-items:flex-start;">
+
+  {# ─── Colonne gauche : prompts + config ─────────────────────────── #}
+  <div style="flex:0 0 220px; min-width:180px;">
+    <div class="panel" style="margin-bottom:0.8rem;">
+      <h3 style="margin-top:0; font-size:0.95rem;">Prompts suggérés</h3>
+      <div style="display:flex; flex-direction:column; gap:0.5rem;">
+        <button class="synth-prompt-btn btn-secondary"
+          data-prompt="Reconstitue la chronologie complète des événements du dossier de succession, en indiquant les dates clés et les acteurs impliqués.">
+          📅 Chronologie complète
+        </button>
+        <button class="synth-prompt-btn btn-secondary"
+          data-prompt="Synthétise les positions de chaque partie sur la dette de Madame DURAND (reconnaissance de dette de 98 500 €, 15 mars 2012) : montant réclamé, montant contesté, arguments avancés.">
+          ⚖️ Dette DURAND
+        </button>
+        <button class="synth-prompt-btn btn-secondary"
+          data-prompt="Quels fonds ont été retirés des comptes du défunt Jean DUPONT autour de son décès (15 janvier 2024) ? Par qui, quel montant, sur quel compte ?">
+          💶 Retraits de fonds
+        </button>
+        <button class="synth-prompt-btn btn-secondary"
+          data-prompt="Résume le fil des négociations sur le partage des biens immobiliers (Versailles et Italie) : qui détient l'usufruit, quelles propositions ont été échangées ?">
+          🏠 Partage immobilier
+        </button>
+        <button class="synth-prompt-btn btn-secondary"
+          data-prompt="Identifie les points de blocage de la procédure : quelles démarches restent en attente, quels délais ont été manqués, quels actes notariés n'ont pas encore été signés ?">
+          🚧 Points de blocage
+        </button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3 style="margin-top:0; font-size:0.95rem;">Configuration LLM</h3>
+      <div style="display:flex; flex-direction:column; gap:0.6rem;">
+        <label style="font-size:0.85rem;">Provider
+          <select id="synth-provider" class="eval-select" style="width:100%; margin-top:0.2rem;">
+            {% for p in available_providers %}
+            <option value="{{ p }}"{% if p == chat_provider %} selected{% endif %}>{{ p }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label style="font-size:0.85rem;">Modèle
+          <select id="synth-model" class="eval-select" style="width:100%; margin-top:0.2rem;">
+            <option value="">Chargement…</option>
+          </select>
+        </label>
+        <label style="font-size:0.85rem;" title="Nombre de chunks récupérés par recherche vectorielle">
+          Top-K chunks
+          <input type="number" id="synth-top-k" value="25" min="5" max="80" step="5"
+            class="eval-select" style="width:100%; margin-top:0.2rem;">
+        </label>
+        <label style="font-size:0.85rem;" title="Documents voisins ajoutés via le graphe de connaissance (0 = désactivé)">
+          Voisins graphe
+          <input type="number" id="synth-expand-extra" value="6" min="0" max="20" step="1"
+            class="eval-select" style="width:100%; margin-top:0.2rem;">
+        </label>
+      </div>
+    </div>
+  </div>
+
+  {# ─── Colonne droite : chatbot ───────────────────────────────────── #}
+  <div style="flex:1; min-width:0;">
+    <div class="panel" style="display:flex; flex-direction:column; min-height:500px;">
+      <div class="chatlog" id="synthlog" style="flex:1; min-height:300px;"></div>
+
+      <form class="chatform" id="synthform" style="align-items:flex-end;">
+        <textarea id="synthquestion" rows="3"
+          placeholder="Ex : Synthétise les positions sur la dette DURAND…"
+          style="flex:1; padding:0.6rem 0.8rem; border:1px solid var(--border); border-radius:6px; font-size:0.95rem; resize:vertical; font-family:inherit;"
+          autocomplete="off"></textarea>
+        <button type="submit" id="synthsendbtn">Envoyer</button>
+      </form>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='synthesis.js') }}"></script>
+{% endblock %}

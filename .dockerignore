@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+.git/
+# Confidentiel : RIEN du dossier data/ (emails .eml, pièces jointes, OCR,
+# settings.json avec clés API, sqlite) ne doit entrer dans l'image.
+data/
+chroma-data/
+pg-data/
+*.log

@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Assistant juridique — Succession DUPONT{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">⚖️ Assistant juridique — <strong>Succession DUPONT</strong></div>
+    <nav>
+      <a href="/" class="{% block nav_timeline %}{% endblock %}">Frise</a>
+      <a href="/graph" class="{% block nav_graph %}{% endblock %}">Graphe</a>
+      <a href="/synthesis" class="{% block nav_synthesis %}{% endblock %}">Synthèse</a>
+      <a href="/advisor" class="{% block nav_advisor %}{% endblock %}">Conseil</a>
+      <a href="/chat" class="{% block nav_chat %}{% endblock %}">Chat</a>
+      <a href="/admin" class="{% block nav_admin %}{% endblock %}">Indexation</a>
+      <a href="/eval" class="{% block nav_eval %}{% endblock %}">Évaluation</a>
+      <a href="/settings" class="{% block nav_settings %}{% endblock %}">Réglages</a>
+    </nav>
+  </header>
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

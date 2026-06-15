@@ -1,0 +1,45 @@
+# Déploiement « nouveau poste » — PULL de l'image publique au lieu de la builder.
+#
+#   docker compose -f docker-compose.prod.yml pull
+#   docker compose -f docker-compose.prod.yml up -d
+#
+# Prérequis sur le poste : Docker + un fichier .env (au moins CHROMA_HOST/PORT ;
+# les clés API peuvent aussi être saisies ensuite via l'UI /settings).
+# Restaurer les données via /admin (Importer) ou `python migrate.py import` côté hôte.
+services:
+  chromadb:
+    image: chromadb/chroma:1.4.4-local
+    volumes:
+      - C:\Projects\avocat\data\chromadb:/data
+    environment:
+      - IS_PERSISTENT=TRUE
+      - ANONYMIZED_TELEMETRY=FALSE
+      - CHROMA_DB_IMPL=duckdb+parquet
+      - CHROMA_QUERY_SIZE_LIMIT=1000
+    ports:
+      - "127.0.0.1:8000:8000"   # localhost uniquement — ChromaDB non authentifié, pas d'exposition réseau
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1024M
+        reservations:
+          cpus: "0.5"
+          memory: 512M
+
+  app:
+    image: denismolin/avocat-app:latest   # PUBLIÉE sur Docker Hub — pas de build local
+    env_file: .env
+    environment:
+      - CHROMA_HOST=chromadb
+      - CHROMA_PORT=8000
+    volumes:
+      - C:\Projects\avocat\data:/app/data   # bases SQLite + PJ/OCR + settings.json persistés sur l'hôte
+    ports:
+      - "5000:5000"
+    restart: unless-stopped
+    depends_on:
+      chromadb:
+        condition: service_started
+

@@ -1,0 +1,27 @@
+# Secrets
+.env
+
+# Environnement Python local
+.venv/
+__pycache__/
+*.pyc
+
+# Données confidentielles de la succession (emails .eml, pièces jointes,
+# index, bases). RIEN du dossier data/ ne doit partir sur GitHub.
+data/
+*.sqlite
+*.db
+
+# Volumes Docker (bind mounts — data/ est hors OneDrive, mais au cas où)
+data/
+pg-data/
+
+# Archives de migration (export des bases — confidentiel et volumineux)
+backups/
+
+# Réglages saisis via l'UI (clés API en clair). Déjà couvert par data/, explicité ici.
+data/settings.json
+
+# Divers
+.DS_Store
+*.log

@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block title %}{{ doc.subject }} — Succession DUPONT{% endblock %}
+
+{% block content %}
+<div class="panel">
+  <p><a href="/">← Retour à la frise</a></p>
+  <h1>{{ doc.subject or '(sans objet)' }}</h1>
+  <p><span class="badge {{ doc.affaire }}">{{ doc.affaire }}</span></p>
+
+  <div class="headers">
+    <div><strong>De :</strong> {{ headers.from }}</div>
+    {% if headers.to %}<div><strong>À :</strong> {{ headers.to }}</div>{% endif %}
+    {% if headers.cc %}<div><strong>Cc :</strong> {{ headers.cc }}</div>{% endif %}
+    <div><strong>Date :</strong> {{ headers.date }}</div>
+    <div><strong>Correspondant :</strong> {{ doc.correspondent }}</div>
+  </div>
+
+  <div class="body-new">{{ body_new }}</div>
+
+  {% if body_quoted %}
+  <details class="quoted">
+    <summary>Afficher l'historique cité ({{ body_quoted|length }} caractères)</summary>
+    <pre>{{ body_quoted }}</pre>
+  </details>
+  {% endif %}
+</div>
+
+{% if attachments %}
+<div class="panel">
+  <h2>Pièces jointes ({{ attachments|length }})</h2>
+  <ul class="attachments">
+    {% for att in attachments %}
+    <li>
+      <a href="/attachment/{{ att.doc_id }}">📎 {{ att.filename }}</a>
+      <span class="muted">({{ (att.size / 1024)|round(0)|int }} Ko)</span>
+      {% if att.needs_ocr %}<span class="muted">— OCR requis (jalon 2)</span>{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+{% if graph.enrichment %}
+<div class="panel">
+  <h2>Analyse</h2>
+  {% if graph.enrichment.intention %}<div><strong>Intention :</strong> {{ graph.enrichment.intention }}</div>{% endif %}
+  {% if graph.enrichment.objectif %}<div><strong>Objectif :</strong> {{ graph.enrichment.objectif }}</div>{% endif %}
+  {% if graph.enrichment.resume %}<div><strong>Résumé :</strong> {{ graph.enrichment.resume }}</div>{% endif %}
+  {% if graph.enrichment.doc_type %}<div><strong>Type :</strong> {{ graph.enrichment.doc_type }}</div>{% endif %}
+  {% if graph.enrichment.facts %}
+  <div><strong>Faits marquants :</strong>
+    <ul>{% for f in graph.enrichment.facts %}<li>{{ f }}</li>{% endfor %}</ul>
+  </div>
+  {% endif %}
+  {% if graph.enrichment.dates_evenements %}
+  <div><strong>Dates d'événements :</strong>
+    <ul>{% for d in graph.enrichment.dates_evenements %}<li><code>{{ d.date }}</code> — {{ d.label }}</li>{% endfor %}</ul>
+  </div>
+  {% endif %}
+  {% if graph.enrichment.parties %}
+  <div><strong>Parties :</strong>
+    <ul>{% for p in graph.enrichment.parties %}<li><span class="muted">{{ p.role }}</span> <strong>{{ p.nom }}</strong>{% if p.qualite %} <span class="muted">({{ p.qualite }})</span>{% endif %}</li>{% endfor %}</ul>
+  </div>
+  {% endif %}
+  {% if graph.enrichment.declarations %}
+  <div><strong>Déclarations :</strong>
+    <ul>{% for d in graph.enrichment.declarations %}<li><strong>{{ d.auteur }}</strong> : {{ d.contenu }}</li>{% endfor %}</ul>
+  </div>
+  {% endif %}
+  {% set codes = graph.enrichment.codes if graph.enrichment.codes is mapping else {} %}
+  {% set all_codes = (codes.cadastre or []) + (codes.comptes_iban or []) + (codes.fiscaux or []) + (codes.dossiers or []) + (codes.autres or []) %}
+  {% if all_codes %}
+  <div><strong>Références :</strong>
+    <ul>
+      {% for v in codes.cadastre or [] %}<li><span class="badge autre">cadastre</span> {{ v }}</li>{% endfor %}
+      {% for v in codes.comptes_iban or [] %}<li><span class="badge autre">IBAN</span> {{ v }}</li>{% endfor %}
+      {% for v in codes.fiscaux or [] %}<li><span class="badge autre">fiscal</span> {{ v }}</li>{% endfor %}
+      {% for v in codes.dossiers or [] %}<li><span class="badge autre">dossier</span> {{ v }}</li>{% endfor %}
+      {% for v in codes.autres or [] %}<li><span class="badge autre">ref</span> {{ v }}</li>{% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if graph.thread or graph.neighbors %}
+<div class="panel">
+  <h2>Contexte</h2>
+  {% if graph.thread %}
+  <h3>Fil de discussion ({{ graph.thread|length }})</h3>
+  <ul class="attachments">
+    {% for d in graph.thread %}
+    <li>
+      {% if d.type == 'mail' %}<a href="/email/{{ d.doc_id }}">✉️ {{ d.subject or '(sans objet)' }}</a>
+      {% else %}<a href="/attachment/{{ d.doc_id }}">📎 {{ d.subject }}</a>{% endif %}
+      <span class="muted">— {{ d.date[:10] }} · {{ d.correspondent }}</span>
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+
+  {% if graph.neighbors %}
+  <h3>Documents liés ({{ graph.neighbors|length }})</h3>
+  <ul class="attachments">
+    {% for n in graph.neighbors %}
+    <li>
+      <span class="badge autre">{{ n.rel_label }}</span>
+      {% if n.type == 'mail' %}<a href="/email/{{ n.doc_id }}">✉️ {{ n.subject or '(sans objet)' }}</a>
+      {% else %}<a href="/attachment/{{ n.doc_id }}">📎 {{ n.subject }}</a>{% endif %}
+      <span class="muted">— {{ n.date[:10] }} · {{ n.correspondent }}</span>
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

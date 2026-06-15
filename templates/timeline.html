@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block nav_timeline %}active{% endblock %}
+
+{% block content %}
+<div class="panel">
+  <h1>Frise chronologique</h1>
+  {% if not chroma_ok %}
+    <p class="warn">⚠️ ChromaDB est injoignable. Le chat ne fonctionnera pas tant que le service n'est pas démarré.</p>
+  {% endif %}
+  {% if n_docs == 0 %}
+    <p class="warn">Aucun document indexé pour l'instant. Lancez l'indexation depuis la page
+      <a href="/admin">Indexation</a>.</p>
+  {% else %}
+    <p class="muted">{{ n_docs }} documents indexés (mails + pièces jointes), triés par date réelle.</p>
+    {{ timeline_html|safe }}
+  {% endif %}
+</div>
+
+{% if emails %}
+<div class="panel">
+  <h2>Mails ({{ emails|length }})</h2>
+  <div class="filters">
+    Filtrer par affaire :
+    <label><input type="checkbox" class="afilter" value="succession" checked> Succession</label>
+    <label><input type="checkbox" class="afilter" value="dette" checked> Dette</label>
+    <label><input type="checkbox" class="afilter" value="pro" checked> Pro</label>
+    <label><input type="checkbox" class="afilter" value="autre" checked> Autre</label>
+  </div>
+  <table class="maillist">
+    <thead>
+      <tr><th>Date</th><th>Correspondant</th><th>Affaire</th><th>Sujet</th></tr>
+    </thead>
+    <tbody>
+      {% for e in emails %}
+      <tr data-affaire="{{ e.affaire }}">
+        <td>{{ e.date[:10] }}</td>
+        <td>{{ e.correspondent }}</td>
+        <td><span class="badge {{ e.affaire }}">{{ e.affaire }}</span></td>
+        <td><a href="/email/{{ e.doc_id }}">{{ e.subject or '(sans objet)' }}</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='timeline.js') }}"></script>
+{% endblock %}

@@ -1,0 +1,27 @@
+# Jalon 1 — MVP navigation + chat
+# Jalon 2 — OCR des PDF scannés via Claude Vision (pas de Tesseract requis)
+# Jalon 3 — visualisation réseau + panneau synthèse
+
+flask>=3.1,<4
+gunicorn>=23.0,<24
+python-dotenv>=1.0,<2
+
+# Parsing pièces jointes "faciles"
+pymupdf>=1.25,<2          # PDF natif (import fitz)
+python-docx>=1.1,<2       # DOCX
+striprtf>=0.0.29,<0.1     # RTF
+
+# RAG — client léger HttpClient vers le service chromadb (le serveur tourne en Docker).
+# `chromadb-client` n'embarque ni le serveur ni onnxruntime (on fournit nos propres
+# embeddings via rag.providers), ce qui évite les soucis de DLL onnxruntime sous Windows.
+chromadb-client>=1.0,<2
+
+# Visualisation
+plotly>=5.24,<6
+networkx>=3.0,<4
+pyvis>=0.3.2,<0.4
+
+# Providers LLM (embeddings + chat). Au moins un doit être configuré via .env.
+openai>=1.59,<2           # OpenAI + compatible vLLM (base_url)
+anthropic>=0.42,<1        # Claude (chat uniquement)
+mistralai>=1.2,<2         # Mistral

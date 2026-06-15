@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block nav_settings %}active{% endblock %}
+{% block title %}Réglages — Succession DUPONT{% endblock %}
+
+{% block content %}
+<div class="panel">
+  <h1>Réglages</h1>
+  <p class="muted">
+    Choix des providers, modèles et clés API. Enregistré dans
+    <code>data/settings.json</code> (jamais commité, jamais inclus dans une archive de
+    migration) et appliqué <strong>à chaud</strong> : les nouvelles requêtes utilisent
+    aussitôt la nouvelle configuration, sans redémarrer l'application.
+  </p>
+
+  {# ─── Providers & modèles ──────────────────────────────────────────────── #}
+  <h2>Providers & modèles</h2>
+  <div class="eval-form-grid" style="max-width:760px;">
+    <label>Provider d'embedding
+      <select id="embed_provider" class="eval-select">
+        {% for p in ["openai", "mistral", "vllm"] %}
+        <option value="{{ p }}"{% if settings.embed_provider == p %} selected{% endif %}>{{ p }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Modèle d'embedding
+      <input id="embed_model" class="eval-select" value="{{ settings.embed_model or '' }}"
+             placeholder="ex. text-embedding-3-large">
+    </label>
+
+    <label>Provider de chat
+      <select id="chat_provider" class="eval-select">
+        {% for p in ["openai", "anthropic", "mistral", "vllm"] %}
+        <option value="{{ p }}"{% if settings.chat_provider == p %} selected{% endif %}>{{ p }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Modèle de chat
+      <input id="chat_model" class="eval-select" value="{{ settings.chat_model or '' }}"
+             placeholder="ex. gpt-4o · claude-opus-4-8 · auto (vLLM)">
+    </label>
+
+    <label>Modèle Mistral (enrichissement à l'indexation)
+      <input id="mistral_chat_model" class="eval-select" value="{{ settings.mistral_chat_model or '' }}"
+             placeholder="ex. mistral-small-latest">
+    </label>
+  </div>
+  <p class="muted" style="font-size:0.85rem; margin-top:0.4rem;">
+    Anthropic = chat uniquement (pas d'API d'embeddings). vLLM : <code>auto</code> détecte
+    le modèle déployé. Changer le modèle d'embedding rend les vecteurs déjà indexés
+    incohérents — à n'utiliser qu'en cohérence avec une (ré)indexation ou un import.
+  </p>
+
+  {# ─── Clés API ─────────────────────────────────────────────────────────── #}
+  <h2 style="margin-top:1.4rem;">Clés API</h2>
+  <p class="muted" style="font-size:0.85rem;">
+    Laissez un champ <strong>vide</strong> pour conserver la clé déjà enregistrée.
+    Les clés sont masquées à la relecture.
+  </p>
+  <div class="eval-form-grid" style="max-width:760px;">
+    {% for prov, label in [("openai", "OpenAI"), ("anthropic", "Anthropic"), ("mistral", "Mistral")] %}
+    <label>{{ label }}
+      <input type="password" id="key_{{ prov }}" class="eval-select" autocomplete="off"
+             placeholder="{% if settings.keys[prov].configured %}configuré ({{ settings.keys[prov].hint }}){% else %}non configuré{% endif %}">
+      <button type="button" class="btn-secondary test-btn" data-provider="{{ prov }}"
+              style="margin-top:0.3rem;">Tester</button>
+      <span class="test-result" data-provider="{{ prov }}" style="font-size:0.82rem;"></span>
+    </label>
+    {% endfor %}
+  </div>
+
+  {# ─── vLLM ─────────────────────────────────────────────────────────────── #}
+  <h2 style="margin-top:1.4rem;">vLLM (endpoint OpenAI-compatible)</h2>
+  <div class="eval-form-grid" style="max-width:760px;">
+    <label>Base URL
+      <input id="vllm_base_url" class="eval-select" value="{{ settings.vllm_base_url or '' }}"
+             placeholder="https://mon-endpoint/v1">
+    </label>
+    <label>Token vLLM
+      <input type="password" id="key_vllm" class="eval-select" autocomplete="off"
+             placeholder="{% if settings.keys.vllm.configured %}configuré ({{ settings.keys.vllm.hint }}){% else %}optionnel{% endif %}">
+      <button type="button" class="btn-secondary test-btn" data-provider="vllm"
+              style="margin-top:0.3rem;">Tester</button>
+      <span class="test-result" data-provider="vllm" style="font-size:0.82rem;"></span>
+    </label>
+  </div>
+
+  <div style="margin-top:1.4rem; display:flex; gap:0.8rem; align-items:center;">
+    <button id="savebtn">Enregistrer</button>
+    <span id="savemsg" class="muted"></span>
+  </div>
+  <p class="muted" style="font-size:0.82rem; margin-top:0.6rem;">
+    Astuce : pour tester une clé que vous venez de saisir, cliquez d'abord
+    <strong>Enregistrer</strong>, puis <strong>Tester</strong>.
+  </p>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='settings.js') }}"></script>
+{% endblock %}

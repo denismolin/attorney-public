@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Graphe de connaissance — Succession DUPONT{% endblock %}
+{% block nav_graph %}active{% endblock %}
+
+{% block content %}
+<div class="panel">
+  <h1>Graphe de connaissance</h1>
+  <p class="muted">
+    {{ n_nodes }} documents · {{ n_edges }} relations —
+    <span style="color:#2c7fb8">■</span> succession
+    <span style="color:#d95f0e">■</span> dette
+    <span style="color:#756bb1">■</span> pro
+    <span style="color:#969696">■</span> autre
+    &nbsp;|&nbsp;
+    <span style="color:#4477cc">→</span> fil/réponse
+    <span style="color:#aaaaaa">⋯</span> pièce jointe
+    <span style="color:#e67e00">→</span> code partagé
+  </p>
+  {% if not n_nodes %}
+    <p class="warn">Aucun document indexé. Lancez l'indexation depuis la page
+      <a href="/admin">Indexation</a>.</p>
+  {% elif not n_edges %}
+    <p class="warn">Le graphe sera disponible à la fin de l'indexation (construction des arêtes en phase finale).</p>
+  {% endif %}
+</div>
+
+{% if net_html %}
+<div style="border:1px solid #ddd; border-radius:4px; overflow:hidden;">
+  {{ net_html|safe }}
+</div>
+{% endif %}
+{% endblock %}

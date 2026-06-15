@@ -1,0 +1,48 @@
+# Jalon 1 — 2 services : app (Flask) + chromadb (vecteurs, persistant).
+# Jalon 2 ajoutera un 3e service : postgres (tableaux extraits).
+services:
+  chromadb:
+    image: chromadb/chroma:1.4.4-local
+    volumes:
+      - C:\Projects\avocat\data\chromadb:/data
+    environment:
+      - IS_PERSISTENT=TRUE
+      - ANONYMIZED_TELEMETRY=FALSE
+      # Optimisations mémoire/CPU
+      - CHROMA_DB_IMPL=duckdb+parquet
+      - CHROMA_QUERY_SIZE_LIMIT=1000
+    ports:
+      - "127.0.0.1:8000:8000"   # localhost uniquement (dev venv) — pas exposé sur le réseau
+    restart: unless-stopped
+    # Healthcheck temporairement désactivé : l'image ne dispose pas de curl ni urllib
+    # healthcheck:
+    #   test: ["CMD", "curl", "-f", "http://localhost:8000/api/v2/heartbeat"]
+    #   interval: 10s
+    #   timeout: 5s
+    #   retries: 6
+    # Limites de ressources — évite les crash sous charge
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1024M
+        reservations:
+          cpus: "0.5"
+          memory: 512M
+
+  app:
+    build: .
+    # Tague l'image au build local (sert de base au push Docker Hub).
+    image: denismolin/avocat-app:latest
+    env_file: .env
+    environment:
+      - CHROMA_HOST=chromadb   # surcharge : dans le réseau compose, le host est le nom du service
+      - CHROMA_PORT=8000
+    volumes:
+      - C:\Projects\avocat\data:/app/data   # .eml en entrée + PJ/texte/sqlite générés (persistance hôte)
+    ports:
+      - "5000:5000"
+    depends_on:
+      chromadb:
+        condition: service_started
+

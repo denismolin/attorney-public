@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block nav_chat %}active{% endblock %}
+{% block title %}Chat — Succession DUPONT{% endblock %}
+
+{% block content %}
+<div class="panel">
+  <div class="chat-header">
+    <h1>Chat sourcé</h1>
+    <div class="chat-actions">
+      <button type="button" id="copybtn" class="btn-secondary" title="Copier toute la conversation">📋 Copier</button>
+      <button type="button" id="clearbtn" class="btn-secondary" title="Effacer l'historique">🗑 Effacer</button>
+    </div>
+  </div>
+  {% if not chroma_ok %}
+    <p class="warn">⚠️ ChromaDB injoignable — le chat ne peut pas rechercher. Démarrez le service et (ré)indexez.</p>
+  {% endif %}
+
+  <div class="eval-form-grid" style="margin-bottom:0.8rem; max-width:480px;">
+    <label>Provider
+      <select id="chat-provider" class="eval-select">
+        {% for p in available_providers %}
+        <option value="{{ p }}"{% if p == chat_provider %} selected{% endif %}>{{ p }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Modèle
+      <select id="chat-model" class="eval-select">
+        <option value="">Chargement…</option>
+      </select>
+    </label>
+  </div>
+
+  <p class="muted">Posez une question sur le dossier. L'assistant garde le fil de la conversation
+    (questions de suivi possibles) et cite ses sources [date — correspondant — sujet].</p>
+
+  <div class="chatlog" id="chatlog"></div>
+
+  <form class="chatform" id="chatform">
+    <input type="text" id="question" placeholder="Ex : Quand la reconnaissance de dette de Mme DURAND a-t-elle été signée ?" autocomplete="off">
+    <button type="submit" id="sendbtn">Envoyer</button>
+  </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='chat.js') }}"></script>
+{% endblock %}
