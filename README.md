@@ -31,6 +31,10 @@ et élaborer une stratégie juridique sur le dossier.
 
 ## Architecture
 
+> 📐 Pour le détail du **fonctionnement RAG & agentique** (pipeline d'indexation,
+> recherche vectorielle + expansion par graphe, les 3 agents et l'orchestration par
+> *function-calling*), voir [ARCHITECTURE.md](ARCHITECTURE.md).
+
 ```
 app.py            Serveur Flask : routes pages + API (SSE pour le streaming)
 config.py         Configuration centrale (lecture .env)
