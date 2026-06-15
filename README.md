@@ -66,8 +66,8 @@ Deux parcours. **A. Docker** est recommandé pour installer sur un nouveau poste
 
 ### A. Docker (recommandé, nouveau poste)
 
-Prérequis : **Docker Desktop**. L'image de l'app est publiée sur Docker Hub
-(`denismolin/avocat-app`), donc aucun build local n'est nécessaire.
+Prérequis : **Docker Desktop**. L'app et ChromaDB se lancent via Docker Compose ;
+l'image de l'app est construite localement au premier démarrage.
 
 ```bash
 # 1. Récupérer le code (ou copier le dossier du projet)
@@ -76,9 +76,8 @@ git clone <repo> avocat && cd avocat
 # 2. Configuration minimale
 cp .env.example .env        # les clés API peuvent aussi être saisies ensuite via /settings
 
-# 3. Démarrer (pull de l'image publique + chromadb)
-docker compose -f docker-compose.prod.yml pull
-docker compose -f docker-compose.prod.yml up -d
+# 3. Démarrer (build local de l'app + chromadb)
+docker compose -f docker-compose.prod.yml up -d --build
 # → http://localhost:5000
 ```
 
@@ -162,16 +161,21 @@ a produits.
 L'export/import est aussi disponible dans l'interface **`/admin`** (panneau
 *Migration / Sauvegarde*).
 
-## Publier l'image Docker (mainteneur)
+## Publier l'image Docker (optionnel)
+
+Pour pousser l'image sur votre propre registry (ex. Docker Hub), renseignez votre
+namespace — nécessite `docker login` :
 
 ```bash
-# Build + push sur Docker Hub (namespace denismolin) — nécessite `docker login`
-./scripts/docker-push.sh                 # Linux/macOS  (TAG=v1.0 pour versionner)
-.\scripts\docker-push.ps1                # Windows      (-Tag v1.0, -MultiArch si ARM)
+# Linux/macOS
+IMAGE=<votre-namespace>/avocat-app ./scripts/docker-push.sh        # TAG=v1.0 pour versionner
+# Windows
+.\scripts\docker-push.ps1 -Image <votre-namespace>/avocat-app     # -Tag v1.0, -MultiArch si ARM
 ```
 
-`docker-compose.yml` (build local, deux services `app` + `chromadb`) sert au dev ;
-`docker-compose.prod.yml` (pull de l'image publique) sert au déploiement.
+`docker-compose.yml` et `docker-compose.prod.yml` construisent l'image localement
+(`build: .`). Pour déployer une image pré-publiée, remplacez le bloc `build: .` du
+service `app` par `image: <votre-namespace>/avocat-app:latest`.
 
 ## Notes
 

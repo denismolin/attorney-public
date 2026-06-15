@@ -1,12 +1,13 @@
-# Build + push de l'image app sur Docker Hub (namespace denismolin).
+# Build + push de l'image app sur un registry (ex. Docker Hub).
 #
-#   .\scripts\docker-push.ps1            # tag latest
-#   .\scripts\docker-push.ps1 -Tag v1.0  # tag versionné (+ latest)
+#   .\scripts\docker-push.ps1 -Image <votre-namespace>/avocat-app             # tag latest
+#   .\scripts\docker-push.ps1 -Image ... -Tag v1.0                            # tag versionné (+ latest)
 #
-# Nécessite : `docker login` (identifiants Docker Hub denismolin).
+# Nécessite : `docker login` (avec vos identifiants registry).
+# Renseignez -Image avec votre propre namespace.
 param(
     [string]$Tag = "latest",
-    [string]$Image = "denismolin/avocat-app",
+    [string]$Image = "your-namespace/avocat-app",
     [switch]$MultiArch   # build multi-arch (amd64+arm64) si le poste cible est ARM (Apple Silicon)
 )
 

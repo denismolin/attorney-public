@@ -1,16 +1,18 @@
-# Déploiement « nouveau poste » — PULL de l'image publique au lieu de la builder.
+# Déploiement « nouveau poste » — build local de l'image de l'app.
 #
-#   docker compose -f docker-compose.prod.yml pull
-#   docker compose -f docker-compose.prod.yml up -d
+#   docker compose -f docker-compose.prod.yml up -d --build
 #
 # Prérequis sur le poste : Docker + un fichier .env (au moins CHROMA_HOST/PORT ;
 # les clés API peuvent aussi être saisies ensuite via l'UI /settings).
 # Restaurer les données via /admin (Importer) ou `python migrate.py import` côté hôte.
+#
+# Pour utiliser une image pré-construite plutôt qu'un build, remplacez le bloc
+# `build: .` du service `app` par `image: <votre-namespace>/avocat-app:latest`.
 services:
   chromadb:
     image: chromadb/chroma:1.4.4-local
     volumes:
-      - C:\Projects\avocat\data\chromadb:/data
+      - ./data/chromadb:/data
     environment:
       - IS_PERSISTENT=TRUE
       - ANONYMIZED_TELEMETRY=FALSE
@@ -29,13 +31,13 @@ services:
           memory: 512M
 
   app:
-    image: denismolin/avocat-app:latest   # PUBLIÉE sur Docker Hub — pas de build local
+    build: .   # build local de l'image (cf. en-tête pour utiliser une image publiée)
     env_file: .env
     environment:
       - CHROMA_HOST=chromadb
       - CHROMA_PORT=8000
     volumes:
-      - C:\Projects\avocat\data:/app/data   # bases SQLite + PJ/OCR + settings.json persistés sur l'hôte
+      - ./data:/app/data   # bases SQLite + PJ/OCR + settings.json persistés sur l'hôte
     ports:
       - "5000:5000"
     restart: unless-stopped

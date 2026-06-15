@@ -50,15 +50,15 @@ python app.py                # http://localhost:5000
 # Full stack (build local image + chromadb)
 docker compose up --build
 
-# Production / new machine (pull public image)
-docker compose -f docker-compose.prod.yml pull && docker compose -f docker-compose.prod.yml up -d
+# Production / new machine (build local image + chromadb)
+docker compose -f docker-compose.prod.yml up -d --build
 
 # Migration (no re-indexing): export on old machine, import on new one
 python migrate.py export [--no-sources]
 python migrate.py import backups/avocat-export-<date>.zip --yes
 
-# Publish the app image to Docker Hub (denismolin) — needs `docker login`
-./scripts/docker-push.sh        # or .\scripts\docker-push.ps1
+# Publish the app image to your own registry — needs `docker login`
+IMAGE=<your-namespace>/avocat-app ./scripts/docker-push.sh   # or .\scripts\docker-push.ps1 -Image ...
 ```
 
 ## Key conventions

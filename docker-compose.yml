@@ -4,7 +4,7 @@ services:
   chromadb:
     image: chromadb/chroma:1.4.4-local
     volumes:
-      - C:\Projects\avocat\data\chromadb:/data
+      - ./data/chromadb:/data
     environment:
       - IS_PERSISTENT=TRUE
       - ANONYMIZED_TELEMETRY=FALSE
@@ -32,14 +32,14 @@ services:
 
   app:
     build: .
-    # Tague l'image au build local (sert de base au push Docker Hub).
-    image: denismolin/avocat-app:latest
+    # Tague l'image au build local (sert de base à un éventuel push registry).
+    image: avocat-app:latest
     env_file: .env
     environment:
       - CHROMA_HOST=chromadb   # surcharge : dans le réseau compose, le host est le nom du service
       - CHROMA_PORT=8000
     volumes:
-      - C:\Projects\avocat\data:/app/data   # .eml en entrée + PJ/texte/sqlite générés (persistance hôte)
+      - ./data:/app/data   # .eml en entrée + PJ/texte/sqlite générés (persistance hôte)
     ports:
       - "5000:5000"
     depends_on:
