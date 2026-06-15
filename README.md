@@ -1,4 +1,4 @@
-# RAG Legal Assistant — Succession
+# RAG Legal Assistant
 
 A Flask **RAG** (Retrieval-Augmented Generation) application for analysing the
 correspondence of a French/Italian succession (estate) case. It parses emails
