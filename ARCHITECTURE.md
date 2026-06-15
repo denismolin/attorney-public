@@ -35,13 +35,25 @@ and the **three conversational agents** built on top — including the agentic
                    │  expansion        │
                    └─────────┬─────────┘
                              ▼
-        ┌────────────┬───────────────┬──────────────────┐
-        ▼            ▼               ▼                  
-   Chat agent   Synthesis agent   Advisor agent
-  (plan→exec)   (SQL briefing +   (function-calling
-                 full-text)        orchestrator)
-   rag/chat.py  rag/synthesis_     rag/advisor_chat.py
-                 chat.py
+                ┌──────────────────────────┐
+                │      Advisor agent       │  rag/advisor_chat.py
+                │ (function-calling        │
+                │  orchestrator)           │
+                └─────────────┬────────────┘
+            function-calling delegates to ↓ (tools)
+        ┌─────────────────────┼─────────────────────┐
+        ▼                     ▼                     ▼
+   Chat agent          Synthesis agent       direct search
+  (plan→exec)         (SQL briefing +       (raw passages)
+   rag/chat.py         full-text)            rag/retrieve.py
+                       rag/synthesis_chat.py
+        │                     │
+        └─────────┬───────────┘
+                  ▼
+          Retrieval layer (search + graph expansion)
+
+  Chat and Synthesis are ALSO usable directly (their own /chat, /synthesis
+  panels); the Advisor calls them as tools and merges their sourced results.
 ```
 
 The system follows a classic **Retrieval-Augmented Generation** shape — embed the
@@ -52,8 +64,11 @@ things on top that distinguish it:
    synthesis agent prepends a **SQL briefing** of structured facts.
 2. **Knowledge-graph expansion** — retrieved passages pull in their graph
    neighbours (email thread siblings, attachments, docs sharing a reference).
-3. **Agentic orchestration** — the advisor is a tool-using agent that delegates to
-   the other two agents and to raw search via *function-calling*.
+3. **Agentic orchestration** — the **Advisor sits one tier above** the other two
+   agents: it is a tool-using agent that, via *function-calling*, delegates to the
+   **Chat agent**, the **Synthesis agent**, and to raw search — then merges their
+   sourced results into a defence strategy (§4.3). Chat and Synthesis remain usable
+   on their own; the Advisor reuses them as building blocks.
 
 Every factual claim an agent makes is **cited** `[date — correspondent — subject]`,
 and answers are grounded *only* in retrieved context (the system prompts forbid
