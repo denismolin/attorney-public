@@ -1,132 +1,132 @@
-# Assistant juridique RAG — Succession
+# RAG Legal Assistant — Succession
 
-Application Flask de **RAG** (Retrieval-Augmented Generation) pour analyser la
-correspondance d'une succession franco-italienne. Elle parse les emails (`.eml`)
-et leurs pièces jointes, les indexe dans une base vectorielle, construit un graphe
-documentaire, et expose plusieurs agents conversationnels pour interroger, synthétiser
-et élaborer une stratégie juridique sur le dossier.
+A Flask **RAG** (Retrieval-Augmented Generation) application for analysing the
+correspondence of a French/Italian succession (estate) case. It parses emails
+(`.eml`) and their attachments, indexes them in a vector store, builds a document
+graph, and exposes several conversational agents to query, synthesise and devise a
+legal strategy over the case file.
 
-> ⚠️ **Données confidentielles.** Les emails, pièces jointes, index et bases de
-> données ne sont **pas** versionnés (cf. [`.gitignore`](.gitignore)). Ce dépôt ne
-> contient que le **code**. Les `.eml` se placent en local dans `data/` (voir plus bas).
+> ⚠️ **Confidential data.** Emails, attachments, indexes and databases are **not**
+> versioned (see [`.gitignore`](.gitignore)). This repository contains **code only**.
+> The `.eml` files go locally into `data/` (see below).
 
-## Fonctionnalités
+## Features
 
-- **Parsing EML** multi-encodage (Windows-1252/quoted-printable, UTF-8/base64,
-  `multipart`), extraction des pièces jointes (PDF, DOCX, RTF) et OCR des PDF scannés
-  via Claude Vision.
-- **Indexation vectorielle** dans ChromaDB, embeddings fournis par le provider choisi
-  (pas d'`onnxruntime` local).
-- **Graphe documentaire** (fils de discussion, voisinage) pour enrichir la recherche.
-- **Trois agents** (chacun avec son panneau web) :
-  - **Chat** — Q&A ponctuelle (analyse → plan → exécution → synthèse).
-  - **Synthèse** — narratif sourcé sur l'ensemble du dossier (briefing SQL structuré
-    + recherche plein texte), chaque affirmation citée `[date — correspondant — sujet]`.
-  - **Conseil** — avocat stratège : réagit à un scénario/dire de la partie adverse,
-    délègue aux deux autres agents via *function-calling*, et liste les pièces
-    complémentaires utiles. Supporte les *reasoning models* (effort low/medium/high).
-- **Visualisations** : frise chronologique et graphe réseau (Plotly / PyVis).
-- **Évaluation** RAG (génération de questions + juge LLM).
-- **Multi-provider** : OpenAI, Anthropic (chat), Mistral, vLLM (OpenAI-compatible).
+- **EML parsing**, multi-encoding (Windows-1252/quoted-printable, UTF-8/base64,
+  `multipart`), attachment extraction (PDF, DOCX, RTF) and OCR of scanned PDFs via
+  Claude Vision.
+- **Vector indexing** in ChromaDB, with embeddings provided by the chosen provider
+  (no local `onnxruntime`).
+- **Document graph** (email threads, neighbourhood) to enrich retrieval.
+- **Three agents** (each with its own web panel):
+  - **Chat** — one-off Q&A (analyse → plan → execute → synthesise).
+  - **Synthesis** — sourced narrative over the whole case file (structured SQL
+    briefing + full-text search), every claim cited `[date — correspondent — subject]`.
+  - **Advisor** — strategist lawyer: reacts to a scenario/argument from the opposing
+    party, delegates to the other two agents via *function-calling*, and lists useful
+    supporting documents. Supports *reasoning models* (effort low/medium/high).
+- **Visualisations**: timeline and network graph (Plotly / PyVis).
+- **RAG evaluation** (question generation + LLM judge).
+- **Multi-provider**: OpenAI, Anthropic (chat), Mistral, vLLM (OpenAI-compatible).
 
 ## Architecture
 
-> 📐 Pour le détail du **fonctionnement RAG & agentique** (pipeline d'indexation,
-> recherche vectorielle + expansion par graphe, les 3 agents et l'orchestration par
-> *function-calling*), voir [ARCHITECTURE.md](ARCHITECTURE.md).
+> 📐 For details on the **RAG & agentic design** (indexing pipeline, vector search +
+> graph expansion, the 3 agents and the *function-calling* orchestration), see
+> [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ```
-app.py            Serveur Flask : routes pages + API (SSE pour le streaming)
-config.py         Configuration centrale (lecture .env)
-indexer.py        Pipeline d'indexation (parse → enrich → chunk → embed → Chroma)
-migrate.py        Export/import des bases (Chroma + SQLite + fichiers) — portabilité
-state.py          Base documentaire (SQLite)
-graph_state.py    Graphe documentaire
+app.py            Flask server: page routes + API (SSE for streaming)
+config.py         Central configuration (reads .env)
+indexer.py        Indexing pipeline (parse → enrich → chunk → embed → Chroma)
+migrate.py        Database export/import (Chroma + SQLite + files) — portability
+state.py          Document store (SQLite)
+graph_state.py    Document graph
 
-parsing/          Parsing EML, pièces jointes, OCR, classification, threading
-rag/              Cœur RAG : providers, retrieve, chunker, index, intent, planner
-                  + les 3 agents : chat.py, synthesis_chat.py, advisor_chat.py
-viz/              Frise, graphe réseau, données de synthèse
-eval/             Génération de questions d'évaluation + juge LLM
+parsing/          EML parsing, attachments, OCR, classification, threading
+rag/              RAG core: providers, retrieve, chunker, index, intent, planner
+                  + the 3 agents: chat.py, synthesis_chat.py, advisor_chat.py
+viz/              Timeline, network graph, synthesis data
+eval/             Evaluation question generation + LLM judge
 
-templates/        Vues Jinja (base, chat, synthesis, advisor, graph, timeline, …)
-static/           JS/CSS des panneaux
+templates/        Jinja views (base, chat, synthesis, advisor, graph, timeline, …)
+static/           JS/CSS for the panels
 ```
 
-Pages web (une fois l'app lancée) : `/` (frise), `/graph`, `/synthesis`,
-`/advisor` (conseil), `/chat`, `/admin` (indexation + migration), `/eval`,
-`/settings` (providers & clés).
+Web pages (once the app is running): `/` (timeline), `/graph`, `/synthesis`,
+`/advisor`, `/chat`, `/admin` (indexing + migration), `/eval`,
+`/settings` (providers & keys).
 
-## Prérequis
+## Requirements
 
 - Python 3.11+
-- Docker (pour le service **ChromaDB**)
-- Au moins une clé API d'un provider LLM (OpenAI / Anthropic / Mistral) ou un endpoint vLLM
+- Docker (for the **ChromaDB** service)
+- At least one LLM provider API key (OpenAI / Anthropic / Mistral) or a vLLM endpoint
 
 ## Installation
 
-Deux parcours. **A. Docker** est recommandé pour installer sur un nouveau poste ;
-**B. venv** pour développer.
+Two paths. **A. Docker** is recommended for installing on a new machine;
+**B. venv** for development.
 
-### A. Docker (recommandé, nouveau poste)
+### A. Docker (recommended, new machine)
 
-Prérequis : **Docker Desktop**. L'app et ChromaDB se lancent via Docker Compose ;
-l'image de l'app est construite localement au premier démarrage.
+Prerequisite: **Docker Desktop**. The app and ChromaDB are launched via Docker
+Compose; the app image is built locally on first startup.
 
 ```bash
-# 1. Récupérer le code (ou copier le dossier du projet)
+# 1. Get the code (or copy the project folder)
 git clone <repo> avocat && cd avocat
 
-# 2. Configuration minimale
-cp .env.example .env        # les clés API peuvent aussi être saisies ensuite via /settings
+# 2. Minimal configuration
+cp .env.example .env        # API keys can also be entered later via /settings
 
-# 3. Démarrer (build local de l'app + chromadb)
+# 3. Start (local build of the app + chromadb)
 docker compose -f docker-compose.prod.yml up -d --build
 # → http://localhost:5000
 ```
 
-Ensuite : ouvrir **`/settings`** pour renseigner providers, modèles et clés API
-(appliqués à chaud, sans redémarrage), puis **restaurer les données** via `/admin`
-(bouton *Importer*) ou `python migrate.py import` — cf. [Portabilité](#portabilité--migration).
+Then: open **`/settings`** to enter providers, models and API keys (applied live, no
+restart), and **restore the data** via `/admin` (*Import* button) or
+`python migrate.py import` — see [Portability](#portability--migration).
 
-### B. Dev local (venv)
+### B. Local dev (venv)
 
 ```bash
-# 1. Environnement Python
+# 1. Python environment
 python -m venv .venv
-# Windows : .venv\Scripts\activate   —   macOS/Linux : source .venv/bin/activate
+# Windows: .venv\Scripts\activate   —   macOS/Linux: source .venv/bin/activate
 pip install -r requirements.txt
 
-# 2. Configuration (ou tout via /settings après lancement)
+# 2. Configuration (or everything via /settings after launch)
 cp .env.example .env
 
-# 3. ChromaDB (Docker), indexation, puis app
+# 3. ChromaDB (Docker), indexing, then the app
 docker compose up -d chromadb
-python indexer.py           # ou via l'interface /admin
+python indexer.py           # or via the /admin interface
 python app.py               # → http://localhost:5000
 ```
 
 ### Configuration
 
-Trois façons (par ordre de priorité croissante) : valeurs par défaut → `.env` →
-**menu `/settings`** (écrit dans `data/settings.json`, jamais commité). Variables
-principales (cf. [`.env.example`](.env.example)) :
+Three ways (in increasing order of precedence): defaults → `.env` →
+**`/settings` menu** (written to `data/settings.json`, never committed). Main
+variables (see [`.env.example`](.env.example)):
 
-| Variable | Rôle |
+| Variable | Role |
 |---|---|
-| `EMBED_PROVIDER` / `CHAT_PROVIDER` | `openai` \| `anthropic`* \| `mistral` \| `vllm` (*Anthropic = chat uniquement) |
-| `EMBED_MODEL` / `CHAT_MODEL` | modèles par provider (ex. `text-embedding-3-large` / `gpt-4o`) |
-| `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `MISTRAL_API_KEY` | clés selon providers |
-| `VLLM_BASE_URL` / `VLLM_API_KEY` | endpoint vLLM OpenAI-compatible (optionnel) |
-| `CHROMA_HOST` / `CHROMA_PORT` | service ChromaDB (`localhost:8000` en dev, `chromadb:8000` en compose) |
-| `CHUNK_SIZE` / `CHUNK_OVERLAP` | découpage à l'indexation |
+| `EMBED_PROVIDER` / `CHAT_PROVIDER` | `openai` \| `anthropic`* \| `mistral` \| `vllm` (*Anthropic = chat only) |
+| `EMBED_MODEL` / `CHAT_MODEL` | models per provider (e.g. `text-embedding-3-large` / `gpt-4o`) |
+| `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `MISTRAL_API_KEY` | keys depending on providers |
+| `VLLM_BASE_URL` / `VLLM_API_KEY` | OpenAI-compatible vLLM endpoint (optional) |
+| `CHROMA_HOST` / `CHROMA_PORT` | ChromaDB service (`localhost:8000` in dev, `chromadb:8000` in compose) |
+| `CHUNK_SIZE` / `CHUNK_OVERLAP` | chunking at indexing time |
 
-> Providers, modèles et clés se gèrent au plus simple depuis **`/settings`**.
-> L'infra (Chroma, Flask, chunking) reste pilotée par le `.env` / `docker-compose`.
+> Providers, models and keys are managed most easily from **`/settings`**.
+> Infrastructure (Chroma, Flask, chunking) stays driven by `.env` / `docker-compose`.
 
-## Données
+## Data
 
-Place les emails source dans `data/`, organisés par expéditeur/partie, p. ex. :
+Place the source emails in `data/`, organised by sender/party, e.g.:
 
 ```
 data/
@@ -136,55 +136,56 @@ data/
   …
 ```
 
-Les pièces jointes extraites, le texte OCR, la base SQLite et l'index sont **générés**
-par l'indexation et restent locaux (ignorés par git).
+Extracted attachments, OCR text, the SQLite database and the index are **generated**
+by indexing and stay local (ignored by git).
 
-## Portabilité & migration
+## Portability & migration
 
-Pour changer de poste **sans repayer l'indexation** (embeddings ChromaDB) ni
-l'enrichissement LLM, on exporte/importe les bases avec [`migrate.py`](migrate.py).
-L'archive `.zip` contient les **vecteurs ChromaDB déjà calculés**, la base **SQLite**
-(registre, graphe, enrichissement, évaluations), les **pièces jointes**, le **texte OCR**
-et (option) les **emails sources**. Les **clés API ne sont jamais incluses**.
+To move to another machine **without paying for indexing again** (ChromaDB
+embeddings) or for LLM enrichment, export/import the databases with
+[`migrate.py`](migrate.py). The `.zip` archive contains the **already-computed
+ChromaDB vectors**, the **SQLite** database (registry, graph, enrichment,
+evaluations), the **attachments**, the **OCR text** and (optionally) the **source
+emails**. **API keys are never included.**
 
 ```bash
-# Ancien poste — créer l'archive (ou bouton « Exporter » dans /admin)
+# Old machine — create the archive (or the “Export” button in /admin)
 python migrate.py export                 # → backups/avocat-export-<date>.zip
-python migrate.py export --no-sources    # archive légère (sans les .eml sources)
+python migrate.py export --no-sources    # lightweight archive (without the source .eml)
 
-# Nouveau poste — APRÈS avoir configuré le MÊME modèle d'embedding via /settings
+# New machine — AFTER configuring the SAME embedding model via /settings
 python migrate.py import backups/avocat-export-<date>.zip --yes
 ```
 
-À l'import : la base SQLite courante est sauvegardée (`app.sqlite.pre-import-…`), puis
-les collections Chroma sont recréées et **les vecteurs réinjectés tels quels** (zéro
-appel d'embedding). ⚠️ Configurez le **même `EMBED_PROVIDER`/`EMBED_MODEL`** que celui
-indiqué dans le `manifest.json` de l'archive : les vecteurs sont liés au modèle qui les
-a produits.
+On import: the current SQLite database is backed up (`app.sqlite.pre-import-…`), then
+the Chroma collections are recreated and **the vectors re-injected as-is** (zero
+embedding calls). ⚠️ Set the **same `EMBED_PROVIDER`/`EMBED_MODEL`** as the one
+listed in the archive's `manifest.json`: vectors are tied to the model that produced
+them.
 
-L'export/import est aussi disponible dans l'interface **`/admin`** (panneau
-*Migration / Sauvegarde*).
+Export/import is also available in the **`/admin`** interface (*Migration / Backup*
+panel).
 
-## Publier l'image Docker (optionnel)
+## Publishing the Docker image (optional)
 
-Pour pousser l'image sur votre propre registry (ex. Docker Hub), renseignez votre
-namespace — nécessite `docker login` :
+To push the image to your own registry (e.g. Docker Hub), set your namespace —
+requires `docker login`:
 
 ```bash
 # Linux/macOS
-IMAGE=<votre-namespace>/avocat-app ./scripts/docker-push.sh        # TAG=v1.0 pour versionner
+IMAGE=<your-namespace>/avocat-app ./scripts/docker-push.sh        # TAG=v1.0 to version
 # Windows
-.\scripts\docker-push.ps1 -Image <votre-namespace>/avocat-app     # -Tag v1.0, -MultiArch si ARM
+.\scripts\docker-push.ps1 -Image <your-namespace>/avocat-app     # -Tag v1.0, -MultiArch for ARM
 ```
 
-`docker-compose.yml` et `docker-compose.prod.yml` construisent l'image localement
-(`build: .`). Pour déployer une image pré-publiée, remplacez le bloc `build: .` du
-service `app` par `image: <votre-namespace>/avocat-app:latest`.
+`docker-compose.yml` and `docker-compose.prod.yml` build the image locally
+(`build: .`). To deploy a pre-published image, replace the `build: .` block of the
+`app` service with `image: <your-namespace>/avocat-app:latest`.
 
 ## Notes
 
-- ChromaDB est utilisé en **client léger** (`chromadb-client`) : les embeddings sont
-  fournis par `rag/providers.py`, ce qui évite les soucis d'`onnxruntime` sous Windows.
-- L'agent **Conseil** active le raisonnement via `reasoning_effort` (mappé vers
-  `reasoning_effort` côté OpenAI, et `thinking` adaptatif + `effort` côté Anthropic) ;
-  ignoré par les providers qui ne le supportent pas.
+- ChromaDB is used as a **thin client** (`chromadb-client`): embeddings are provided
+  by `rag/providers.py`, which avoids `onnxruntime` issues on Windows.
+- The **Advisor** agent enables reasoning via `reasoning_effort` (mapped to
+  `reasoning_effort` on OpenAI, and adaptive `thinking` + `effort` on Anthropic);
+  ignored by providers that don't support it.
