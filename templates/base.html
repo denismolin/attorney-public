@@ -10,22 +10,22 @@
   <header class="topbar">
     <div class="brand">⚖️ Assistant juridique — <strong>Succession DUPONT</strong></div>
     <nav>
-      <a href="/" class="{% block nav_timeline %}{% endblock %}">Frise</a>
-      <a href="/graph" class="{% block nav_graph %}{% endblock %}">Graphe</a>
-      <a href="/synthesis" class="{% block nav_synthesis %}{% endblock %}">Synthèse</a>
-      <a href="/advisor" class="{% block nav_advisor %}{% endblock %}">Conseil</a>
-      <a href="/chat" class="{% block nav_chat %}{% endblock %}">Chat</a>
+      <a href="{{ url_for('index') }}" class="{% block nav_timeline %}{% endblock %}">Frise</a>
+      <a href="{{ url_for('graph_page') }}" class="{% block nav_graph %}{% endblock %}">Graphe</a>
+      <a href="{{ url_for('synthesis_page') }}" class="{% block nav_synthesis %}{% endblock %}">Synthèse</a>
+      <a href="{{ url_for('advisor_page') }}" class="{% block nav_advisor %}{% endblock %}">Conseil</a>
+      <a href="{{ url_for('chat_page') }}" class="{% block nav_chat %}{% endblock %}">Chat</a>
       {% if current_user.is_authenticated and current_user.role == 'admin' %}
-      <a href="/admin" class="{% block nav_admin %}{% endblock %}">Indexation</a>
+      <a href="{{ url_for('admin_page') }}" class="{% block nav_admin %}{% endblock %}">Indexation</a>
       {% endif %}
-      <a href="/eval" class="{% block nav_eval %}{% endblock %}">Évaluation</a>
+      <a href="{{ url_for('eval_page') }}" class="{% block nav_eval %}{% endblock %}">Évaluation</a>
       {% if current_user.is_authenticated and current_user.role == 'admin' %}
-      <a href="/settings" class="{% block nav_settings %}{% endblock %}">Réglages</a>
-      <a href="/admin/users" class="{% block nav_admin_users %}{% endblock %}">Utilisateurs</a>
+      <a href="{{ url_for('settings_page') }}" class="{% block nav_settings %}{% endblock %}">Réglages</a>
+      <a href="{{ url_for('admin_users_page') }}" class="{% block nav_admin_users %}{% endblock %}">Utilisateurs</a>
       {% endif %}
     </nav>
     {% if current_user.is_authenticated %}
-    <form method="post" action="/logout" style="margin:0;">
+    <form method="post" action="{{ url_for('logout') }}" style="margin:0;">
       <button type="submit" class="btn-secondary btn-sm">Déconnexion ({{ current_user.username }})</button>
     </form>
     {% endif %}

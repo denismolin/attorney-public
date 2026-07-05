@@ -18,7 +18,7 @@
   </p>
   {% if not n_nodes %}
     <p class="warn">Aucun document indexé. Lancez l'indexation depuis la page
-      <a href="/admin">Indexation</a>.</p>
+      <a href="{{ url_for('admin_page') }}">Indexation</a>.</p>
   {% elif not n_edges %}
     <p class="warn">Le graphe sera disponible à la fin de l'indexation (construction des arêtes en phase finale).</p>
   {% endif %}

@@ -3,7 +3,7 @@
 
 {% block content %}
 <div class="panel">
-  <p><a href="/">← Retour à la frise</a></p>
+  <p><a href="{{ url_for('index') }}">← Retour à la frise</a></p>
   <h1>{{ doc.subject or '(sans objet)' }}</h1>
   <p><span class="badge {{ doc.affaire }}">{{ doc.affaire }}</span></p>
 
@@ -31,7 +31,7 @@
   <ul class="attachments">
     {% for att in attachments %}
     <li>
-      <a href="/attachment/{{ att.doc_id }}">📎 {{ att.filename }}</a>
+      <a href="{{ url_for('attachment_download', att_id=att.doc_id) }}">📎 {{ att.filename }}</a>
       <span class="muted">({{ (att.size / 1024)|round(0)|int }} Ko)</span>
       {% if att.needs_ocr %}<span class="muted">— OCR requis (jalon 2)</span>{% endif %}
     </li>
@@ -91,8 +91,8 @@
   <ul class="attachments">
     {% for d in graph.thread %}
     <li>
-      {% if d.type == 'mail' %}<a href="/email/{{ d.doc_id }}">✉️ {{ d.subject or '(sans objet)' }}</a>
-      {% else %}<a href="/attachment/{{ d.doc_id }}">📎 {{ d.subject }}</a>{% endif %}
+      {% if d.type == 'mail' %}<a href="{{ url_for('email_detail', doc_id=d.doc_id) }}">✉️ {{ d.subject or '(sans objet)' }}</a>
+      {% else %}<a href="{{ url_for('attachment_download', att_id=d.doc_id) }}">📎 {{ d.subject }}</a>{% endif %}
       <span class="muted">— {{ d.date[:10] }} · {{ d.correspondent }}</span>
     </li>
     {% endfor %}
@@ -105,8 +105,8 @@
     {% for n in graph.neighbors %}
     <li>
       <span class="badge autre">{{ n.rel_label }}</span>
-      {% if n.type == 'mail' %}<a href="/email/{{ n.doc_id }}">✉️ {{ n.subject or '(sans objet)' }}</a>
-      {% else %}<a href="/attachment/{{ n.doc_id }}">📎 {{ n.subject }}</a>{% endif %}
+      {% if n.type == 'mail' %}<a href="{{ url_for('email_detail', doc_id=n.doc_id) }}">✉️ {{ n.subject or '(sans objet)' }}</a>
+      {% else %}<a href="{{ url_for('attachment_download', att_id=n.doc_id) }}">📎 {{ n.subject }}</a>{% endif %}
       <span class="muted">— {{ n.date[:10] }} · {{ n.correspondent }}</span>
     </li>
     {% endfor %}

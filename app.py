@@ -47,8 +47,11 @@ from parsing.eml_parser import parse_eml
 from rag.index import heartbeat_ok
 from viz.timeline_viz import build_timeline_html
 from viz.network_viz import build_network_html
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 app = Flask(__name__)
+app.wsgi_app = ProxyFix(app.wsgi_app, x_prefix=1)
+app.config["APPLICATION_ROOT"] = os.environ.get("APPLICATION_ROOT", "/")
 # Archives de migration volumineuses (embeddings) → plafond d'upload généreux (2 Go).
 app.config["MAX_CONTENT_LENGTH"] = 2 * 1024 * 1024 * 1024
 app.config["SECRET_KEY"] = os.environ.get("FLASK_SECRET_KEY") or secrets.token_hex(32)
