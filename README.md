@@ -28,6 +28,9 @@ legal strategy over the case file.
 - **Visualisations**: timeline and network graph (Plotly / PyVis).
 - **RAG evaluation** (question generation + LLM judge).
 - **Multi-provider**: OpenAI, Anthropic (chat), Mistral, vLLM (OpenAI-compatible).
+- **Access control**: login required for every page; an admin role manages user
+  accounts and holds exclusive access to `/settings` and `/admin` (see
+  [Authentication](#authentication) below).
 
 ## Architecture
 
@@ -54,8 +57,9 @@ static/           JS/CSS for the panels
 ```
 
 Web pages (once the app is running): `/` (timeline), `/graph`, `/synthesis`,
-`/advisor`, `/chat`, `/admin` (indexing + migration), `/eval`,
-`/settings` (providers & keys).
+`/advisor`, `/chat`, `/admin` (indexing + migration, **admin only**), `/eval`,
+`/settings` (providers & keys, **admin only**), `/admin/users` (user management,
+**admin only**). Every page requires login — see [Authentication](#authentication).
 
 ## Requirements
 
@@ -83,9 +87,13 @@ cp .env.example .env        # API keys can also be entered later via /settings
 # 3. Start (local build of the app + chromadb)
 docker compose -f docker-compose.prod.yml up -d --build
 # → http://localhost:5000
+
+# 4. Retrieve the auto-generated admin password, printed once on first startup
+docker compose -f docker-compose.prod.yml logs app | grep -A2 "Compte admin créé"
 ```
 
-Then: open **`/settings`** to enter providers, models and API keys (applied live, no
+Log in at `/login` with that admin account (see [Authentication](#authentication)),
+then: open **`/settings`** to enter providers, models and API keys (applied live, no
 restart), and **restore the data** via `/admin` (*Import* button) or
 `python migrate.py import` — see [Portability](#portability--migration).
 
@@ -104,6 +112,8 @@ cp .env.example .env
 docker compose up -d chromadb
 python indexer.py           # or via the /admin interface
 python app.py               # → http://localhost:5000
+# On first startup, the admin password is printed once to the console — note it
+# down immediately, then log in at /login (see Authentication below).
 ```
 
 ### Configuration
@@ -121,6 +131,8 @@ variables (see [`.env.example`](.env.example)):
 | `CHROMA_HOST` / `CHROMA_PORT` | ChromaDB service (`localhost:8000` in dev, `chromadb:8000` in compose) |
 | `CHUNK_SIZE` / `CHUNK_OVERLAP` | chunking at indexing time |
 | `SOURCE_DIR` / `GENERATED_DIR` | override the default `data/sources` / `data/generated` roots (optional) |
+| `FLASK_SECRET_KEY` | Flask session signing key — **required** for logins to persist across restarts (see [Authentication](#authentication)) |
+| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | bootstrap admin account created on first startup (optional — see below) |
 
 > Providers, models and keys are managed most easily from **`/settings`**.
 > Infrastructure (Chroma, Flask, chunking) stays driven by `.env` / `docker-compose`.
@@ -158,6 +170,47 @@ first):
 ```bash
 python migrate.py reorganize --yes
 ```
+
+## Authentication
+
+Every page requires login (Flask-Login + server-side sessions). There are two
+roles:
+
+- **admin** — full access, plus `/settings` (providers/API keys), `/admin`
+  (indexing, migration import/export) and `/admin/users` (user management).
+- **user** — access to all research features (timeline, graph, chat, synthesis,
+  advisor, eval); no access to settings, indexing, or user management.
+
+### First login
+
+On first startup (when the `users` table is empty), an admin account is created
+automatically:
+
+- Username: `ADMIN_USERNAME` (defaults to `admin`).
+- Password: `ADMIN_PASSWORD` if set in `.env`; otherwise a random password is
+  **generated and printed once to the console/logs** — copy it immediately, it is
+  never shown again and never stored in plaintext.
+
+```bash
+# venv: look at the terminal running `python app.py`
+# Docker: docker compose -f docker-compose.prod.yml logs app | grep -A2 "Compte admin créé"
+```
+
+Log in at `/login` with that account.
+
+### Session key
+
+Set `FLASK_SECRET_KEY` in `.env` (generate one with
+`python -c "import secrets; print(secrets.token_hex(32))"`). Without it, a random
+key is generated on every startup and all sessions are invalidated on restart —
+fine for a quick local test, not for anything long-running.
+
+### Managing users
+
+As an admin, go to **`/admin/users`** to create additional accounts. Passwords are
+always **server-generated** and displayed **once**, immediately after creation or
+after a password reset — there is no way to view them again afterward. Deleting
+your own account, or the last remaining admin account, is blocked.
 
 ## Portability & migration
 
