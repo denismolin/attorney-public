@@ -565,11 +565,16 @@ def api_upload():
     accepted: list[str] = []
     rejected: list[dict] = []
 
-    # Build hash index of every .eml already present anywhere under SOURCE_DIR
+    # Build hash index of existing .eml files — streamed 64 KB at a time, never full file in RAM
+    _CHUNK = 65536
     existing_hashes: set[str] = set()
     for existing in SOURCE_DIR.rglob("*.eml"):
         try:
-            existing_hashes.add(hashlib.sha256(existing.read_bytes()).hexdigest())
+            h = hashlib.sha256()
+            with existing.open("rb") as fh:
+                while chunk := fh.read(_CHUNK):
+                    h.update(chunk)
+            existing_hashes.add(h.hexdigest())
         except OSError:
             pass
     # Also track hashes of files accepted within this batch (dedup within the upload itself)
@@ -581,20 +586,7 @@ def api_upload():
         if suffix not in _UPLOAD_ALLOWED:
             rejected.append({"name": name, "reason": f"Extension {suffix!r} non supportée (attendu : .eml)"})
             continue
-        try:
-            data = f.read(_UPLOAD_MAX_BYTES + 1)
-            if len(data) > _UPLOAD_MAX_BYTES:
-                rejected.append({"name": name, "reason": "Fichier trop volumineux (max 200 Mo)"})
-                continue
-            digest = hashlib.sha256(data).hexdigest()
-            if digest in existing_hashes or digest in batch_hashes:
-                rejected.append({"name": name, "reason": "Fichier déjà présent (doublon ignoré)"})
-                continue
-            batch_hashes.add(digest)
-        except Exception as exc:
-            rejected.append({"name": name, "reason": f"Erreur de lecture : {exc}"})
-            continue
-        # Nom de fichier sûr
+        # Safe destination filename
         safe_name = Path(name).name
         safe_name = "".join(c if c.isalnum() or c in "._- " else "_" for c in safe_name)
         dest = UPLOADS_DIR / safe_name
@@ -605,11 +597,34 @@ def api_upload():
                 if not candidate.exists():
                     dest = candidate
                     break
+        # Stream incoming file to disk while hashing — never loads whole file into RAM
+        tmp = dest.with_suffix(".tmp")
         try:
-            dest.write_bytes(data)
-            accepted.append(dest.name)
+            h = hashlib.sha256()
+            size = 0
+            with tmp.open("wb") as out:
+                while chunk := f.stream.read(_CHUNK):
+                    size += len(chunk)
+                    if size > _UPLOAD_MAX_BYTES:
+                        break
+                    h.update(chunk)
+                    out.write(chunk)
+            if size > _UPLOAD_MAX_BYTES:
+                tmp.unlink(missing_ok=True)
+                rejected.append({"name": name, "reason": "Fichier trop volumineux (max 200 Mo)"})
+                continue
+            digest = h.hexdigest()
+            if digest in existing_hashes or digest in batch_hashes:
+                tmp.unlink(missing_ok=True)
+                rejected.append({"name": name, "reason": "Fichier déjà présent (doublon ignoré)"})
+                continue
+            tmp.rename(dest)
+            batch_hashes.add(digest)
         except Exception as exc:
+            tmp.unlink(missing_ok=True)
             rejected.append({"name": name, "reason": f"Erreur d'écriture : {exc}"})
+            continue
+        accepted.append(dest.name)
 
     if not accepted and rejected:
         return jsonify({"error": "Aucun fichier accepté.", "rejected": rejected}), 400

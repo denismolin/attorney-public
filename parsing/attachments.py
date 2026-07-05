@@ -2,18 +2,45 @@
 
 Jalon 1 : PDF natif (PyMuPDF), DOCX, RTF, TXT.
 Jalon 2 : PDF scanné → OCR via Claude Vision (parsing/ocr.py) si ANTHROPIC_API_KEY est configurée.
+
+L'OCR (appel payant à Claude Vision) est mis en cache sur disque sous
+EXTRACTED_TEXT_DIR, indexé par le hash du PDF source : une réindexation d'une
+pièce jointe scannée déjà OCRisée et inchangée ne refait pas l'appel API.
 """
 from __future__ import annotations
 
+import hashlib
+import json
 from pathlib import Path
 from typing import Callable
 
-from config import GENERATED_DIR
+from config import EXTRACTED_TEXT_DIR, GENERATED_DIR
 from parsing.eml_parser import Attachment
 
 # Seuil : en dessous de N caractères extraits d'un PDF, on considère que c'est
 # un scan (texte non sélectionnable) → needs_ocr.
 _PDF_MIN_CHARS = 40
+
+
+def _ocr_cache_path(pdf_hash: str) -> Path:
+    return EXTRACTED_TEXT_DIR / f"{pdf_hash}.json"
+
+
+def _load_ocr_cache(pdf_hash: str) -> list[str] | None:
+    cache_path = _ocr_cache_path(pdf_hash)
+    if not cache_path.exists():
+        return None
+    try:
+        return json.loads(cache_path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+
+def _save_ocr_cache(pdf_hash: str, parts: list[str]) -> None:
+    EXTRACTED_TEXT_DIR.mkdir(parents=True, exist_ok=True)
+    _ocr_cache_path(pdf_hash).write_text(
+        json.dumps(parts, ensure_ascii=False), encoding="utf-8"
+    )
 
 
 def _abs_path(att: Attachment) -> Path:
@@ -101,8 +128,17 @@ def extract_text_parts(
         if suffix == ".pdf" or mime == "application/pdf":
             text, needs_ocr = _extract_pdf(path)
             if needs_ocr and api_key:
-                from parsing.ocr import extract_text_vision_parts
-                ocr_parts = extract_text_vision_parts(path, api_key, log=log)
+                pdf_hash = hashlib.sha256(path.read_bytes()).hexdigest()
+                cached = _load_ocr_cache(pdf_hash)
+                if cached is not None:
+                    if log:
+                        log(f"  ↷ OCR {path.name} : déjà en cache ({len(cached)} partie(s))")
+                    ocr_parts = cached
+                else:
+                    from parsing.ocr import extract_text_vision_parts
+                    ocr_parts = extract_text_vision_parts(path, api_key, log=log)
+                    if ocr_parts:
+                        _save_ocr_cache(pdf_hash, ocr_parts)
                 valid = [(t, False) for t in ocr_parts if len(t) >= _PDF_MIN_CHARS]
                 if valid:
                     return valid

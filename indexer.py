@@ -261,22 +261,33 @@ def run(force: bool = False, enrich_provider: str | None = None, enrich_model: s
         n_chunks += len(chunks)
 
         # --- Enrichissement LLM (intention, objectif, faits, entités, codes) ---
+        # Idempotence : mail déjà enrichi et texte inchangé (même content_hash déjà
+        # à jour au moment où on entre ici, cf. skip plus haut sinon) -> on réutilise
+        # l'enrichissement existant plutôt que de rappeler le LLM.
         state.update_progress(phase="enrichissement")
-        state.log(f"[{i}/{total}] → enrichissement LLM : {em.subject[:60]}")
-        _t0 = time.time()
-        enr = enrich.enrich_email(em.subject, mail_text, enrich_chat, log=state.log)
-        _dt = time.time() - _t0
-        _persist_enrichment(em.doc_id, enr)
-        if enr:
-            state.log(
-                f"[{i}/{total}] ✓ enrichi en {_dt:.1f}s — "
-                f"{len(enr.get('faits') or [])} faits, "
-                f"{len(enr.get('parties') or [])} parties, "
-                f"{len(enr.get('dates_evenements') or [])} dates"
-            )
+        cached_enr = graph_state.get_enrichment(em.doc_id)
+        enrichment_reused = not force and bool(cached_enr)
+        if enrichment_reused:
+            state.log(f"[{i}/{total}] ↷ enrichissement inchangé (skippé) : {em.subject[:60]}")
+            enr = cached_enr
         else:
-            state.log(f"[{i}/{total}] ✗ enrichissement échoué ({_dt:.1f}s)", level="error")
-            # Chunk d'enrichissement cherchable (résumé/intention/faits).
+            state.log(f"[{i}/{total}] → enrichissement LLM : {em.subject[:60]}")
+            _t0 = time.time()
+            enr = enrich.enrich_email(em.subject, mail_text, enrich_chat, log=state.log)
+            _dt = time.time() - _t0
+            _persist_enrichment(em.doc_id, enr)
+            if enr:
+                state.log(
+                    f"[{i}/{total}] ✓ enrichi en {_dt:.1f}s — "
+                    f"{len(enr.get('faits') or [])} faits, "
+                    f"{len(enr.get('parties') or [])} parties, "
+                    f"{len(enr.get('dates_evenements') or [])} dates"
+                )
+            else:
+                state.log(f"[{i}/{total}] ✗ enrichissement échoué ({_dt:.1f}s)", level="error")
+        if enr and not enrichment_reused:
+            # Chunk d'enrichissement cherchable (résumé/intention/faits) — inutile de
+            # ré-embeder si on vient de réutiliser un enrichissement déjà indexé.
             enr_meta = {**base_meta, "kind": "enrichment", "chunk_index": -1}
             upsert_chunks(
                 chunks_col,
@@ -404,7 +415,10 @@ def _index_attachments(
             continue
 
         # Index each part under its own doc_id (part 0 keeps the canonical id).
+        # Part 0's hash doubles as the "did this attachment's text change" signal
+        # used below to skip re-enrichment when nothing changed.
         part_doc_ids: list[str] = []
+        canonical_unchanged = False
         for part_idx, (text, _) in enumerate(text_parts):
             if not text.strip():
                 continue
@@ -414,6 +428,8 @@ def _index_attachments(
             content_hash = _hash(text)
             if not force and state.get_document_hash(part_doc_id) == content_hash:
                 part_doc_ids.append(part_doc_id)
+                if part_idx == 0:
+                    canonical_unchanged = True
                 continue
 
             header = (
@@ -474,46 +490,59 @@ def _index_attachments(
             part_doc_ids.append(part_doc_id)
 
         # Enrichissement LLM sur le texte complet (toutes parties) sous le doc_id canonique.
-        text_for_enrich = full_text[:8000]  # garde-fou taille prompt
-        state.log(f"  PJ → enrichissement LLM : {att.filename[:60]}")
-        _t0_att = time.time()
-        enr = enrich.enrich_attachment(att.filename, text_for_enrich, em.subject, enrich_chat, log=state.log)
-        _dt_att = time.time() - _t0_att
-        _persist_enrichment(att.doc_id, enr)
+        # Idempotence : si le texte de la PJ n'a pas changé (hash inchangé) et qu'un
+        # enrichissement existe déjà, on le réutilise au lieu de rappeler le LLM.
+        cached_enr = graph_state.get_enrichment(att.doc_id) if canonical_unchanged else None
+        enrichment_reused = bool(canonical_unchanged and cached_enr)
+        if enrichment_reused:
+            state.log(f"  PJ ↷ enrichissement inchangé (skippé) : {att.filename[:60]}")
+            enr = cached_enr
+        else:
+            text_for_enrich = full_text[:8000]  # garde-fou taille prompt
+            state.log(f"  PJ → enrichissement LLM : {att.filename[:60]}")
+            _t0_att = time.time()
+            enr = enrich.enrich_attachment(att.filename, text_for_enrich, em.subject, enrich_chat, log=state.log)
+            _dt_att = time.time() - _t0_att
+            _persist_enrichment(att.doc_id, enr)
+            if enr:
+                state.log(f"  PJ ✓ enrichie en {_dt_att:.1f}s : {att.filename[:50]}")
         if enr:
-            state.log(f"  PJ ✓ enrichie en {_dt_att:.1f}s : {att.filename[:50]}")
-            enr_meta = {
-                **{
-                    "type": "attachment",
-                    "doc_id": att.doc_id,
-                    "email_id": em.doc_id,
-                    "correspondent": em.correspondent,
-                    "date": em.date_iso,
-                    "subject": att.filename,
-                    "title": att.filename,
-                    "affaire": att_affaire,
-                    "source_path": att.stored_path,
-                    **_affaire_meta(att_affaires),
-                },
-                "kind": "enrichment",
-                "chunk_index": -1,
-            }
-            header_enrich = (
-                f"[PIECE JOINTE] {em.date_iso[:10]} | {em.correspondent} | "
-                f"{','.join(att_affaires)} | Fichier: {att.filename} | "
-                f"(transmis par le mail: {em.subject})"
-            )
-            upsert_chunks(
-                chunks_col,
-                embedder,
-                [{
-                    "id": f"{att.doc_id}#enrich",
-                    "text": _enrichment_chunk_text(header_enrich, enr),
-                    "metadata": enr_meta,
-                }],
-            )
-            if counters is not None:
-                counters["chunks"] += 1
+            # Le chunk d'enrichissement n'a besoin d'être ré-embeddé que si on vient
+            # de le (re)calculer — un enrichissement réutilisé du cache est déjà
+            # indexé sous forme de chunk depuis le run précédent.
+            if not enrichment_reused:
+                enr_meta = {
+                    **{
+                        "type": "attachment",
+                        "doc_id": att.doc_id,
+                        "email_id": em.doc_id,
+                        "correspondent": em.correspondent,
+                        "date": em.date_iso,
+                        "subject": att.filename,
+                        "title": att.filename,
+                        "affaire": att_affaire,
+                        "source_path": att.stored_path,
+                        **_affaire_meta(att_affaires),
+                    },
+                    "kind": "enrichment",
+                    "chunk_index": -1,
+                }
+                header_enrich = (
+                    f"[PIECE JOINTE] {em.date_iso[:10]} | {em.correspondent} | "
+                    f"{','.join(att_affaires)} | Fichier: {att.filename} | "
+                    f"(transmis par le mail: {em.subject})"
+                )
+                upsert_chunks(
+                    chunks_col,
+                    embedder,
+                    [{
+                        "id": f"{att.doc_id}#enrich",
+                        "text": _enrichment_chunk_text(header_enrich, enr),
+                        "metadata": enr_meta,
+                    }],
+                )
+                if counters is not None:
+                    counters["chunks"] += 1
             att_briefs.append({
                 "att_id": att.doc_id,
                 "filename": att.filename,

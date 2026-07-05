@@ -261,6 +261,15 @@ function handleDrop(event) {
     }
   }
 
+  // Les navigateurs limitent fortement setInterval() dans un onglet en
+  // arrière-plan (jusqu'à l'arrêt complet) — on force un poll immédiat au
+  // retour au premier plan pour ne pas laisser l'affichage figé.
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && pollTimer) {
+      poll();
+    }
+  });
+
   startbtn.addEventListener("click", async function () {
     startbtn.disabled = true;
     startbtn.textContent = "Indexation en cours…";
