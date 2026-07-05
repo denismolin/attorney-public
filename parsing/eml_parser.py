@@ -184,14 +184,21 @@ def parse_eml(path: Path, correspondent: str) -> Email:
         )
 
     message_id = (msg.get("Message-ID") or "").strip()
-    # doc_id stable : Message-ID si présent, sinon chemin.
-    id_basis = message_id if message_id else str(path)
+    subject = str(msg.get("Subject") or "").strip()
+    from_ = str(msg.get("From") or "")
+    body_text = _extract_body_text(msg)
+
+    # doc_id stable : Message-ID si présent. Sinon, hash du contenu (From/Date/
+    # Sujet/corps) plutôt que le chemin fichier — un même mail réimporté ou
+    # déplacé (nom de fichier différent, suffixe anti-collision d'upload, etc.)
+    # garde ainsi le même doc_id au lieu d'être ré-indexé comme un doublon.
+    raw_date_header = str(msg.get("Date") or "")
+    id_basis = message_id if message_id else "|".join((from_, raw_date_header, subject, body_text))
     email_id = _stable_doc_id("eml", id_basis)
 
     # Date -> UTC
-    raw_date = msg.get("Date")
     try:
-        dt = parsedate_to_datetime(raw_date) if raw_date else _epoch_fallback()
+        dt = parsedate_to_datetime(raw_date_header) if raw_date_header else _epoch_fallback()
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=timezone.utc)
         dt = dt.astimezone(timezone.utc)
@@ -209,14 +216,14 @@ def parse_eml(path: Path, correspondent: str) -> Email:
         seq=seq,
         source_path=str(path),
         date=dt,
-        from_=str(msg.get("From") or ""),
+        from_=from_,
         to=_decode_addr_list(msg.get("To")),
         cc=_decode_addr_list(msg.get("Cc")),
-        subject=str(msg.get("Subject") or "").strip(),
+        subject=subject,
         message_id=message_id,
         in_reply_to=(str(msg.get("In-Reply-To")).strip() if msg.get("In-Reply-To") else None),
         references=references,
-        body_text=_extract_body_text(msg),
+        body_text=body_text,
         attachments=_extract_attachments(msg, email_id),
     )
 
