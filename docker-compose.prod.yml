@@ -8,11 +8,14 @@
 #
 # Pour utiliser une image pré-construite plutôt qu'un build, remplacez le bloc
 # `build: .` du service `app` par `image: <votre-namespace>/avocat-app:latest`.
+volumes:
+  chroma-data:   # vecteurs ChromaDB — volume nommé, découplé de data/ (sources/générés)
+
 services:
   chromadb:
     image: chromadb/chroma:1.4.4-local
     volumes:
-      - ./data/chromadb:/data
+      - chroma-data:/data
     environment:
       - IS_PERSISTENT=TRUE
       - ANONYMIZED_TELEMETRY=FALSE
@@ -37,7 +40,8 @@ services:
       - CHROMA_HOST=chromadb
       - CHROMA_PORT=8000
     volumes:
-      - ./data:/app/data   # bases SQLite + PJ/OCR + settings.json persistés sur l'hôte
+      - ./data/sources:/app/data/sources       # .eml en entrée + uploads/ (persistance hôte)
+      - ./data/generated:/app/data/generated   # SQLite + PJ/OCR + settings.json persistés sur l'hôte
     ports:
       - "5000:5000"
     restart: unless-stopped

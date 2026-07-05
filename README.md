@@ -8,7 +8,7 @@ legal strategy over the case file.
 
 > ⚠️ **Confidential data.** Emails, attachments, indexes and databases are **not**
 > versioned (see [`.gitignore`](.gitignore)). This repository contains **code only**.
-> The `.eml` files go locally into `data/` (see below).
+> The `.eml` files go locally into `data/sources/` (see below).
 
 ## Features
 
@@ -109,7 +109,7 @@ python app.py               # → http://localhost:5000
 ### Configuration
 
 Three ways (in increasing order of precedence): defaults → `.env` →
-**`/settings` menu** (written to `data/settings.json`, never committed). Main
+**`/settings` menu** (written to `data/generated/settings.json`, never committed). Main
 variables (see [`.env.example`](.env.example)):
 
 | Variable | Role |
@@ -120,24 +120,44 @@ variables (see [`.env.example`](.env.example)):
 | `VLLM_BASE_URL` / `VLLM_API_KEY` | OpenAI-compatible vLLM endpoint (optional) |
 | `CHROMA_HOST` / `CHROMA_PORT` | ChromaDB service (`localhost:8000` in dev, `chromadb:8000` in compose) |
 | `CHUNK_SIZE` / `CHUNK_OVERLAP` | chunking at indexing time |
+| `SOURCE_DIR` / `GENERATED_DIR` | override the default `data/sources` / `data/generated` roots (optional) |
 
 > Providers, models and keys are managed most easily from **`/settings`**.
 > Infrastructure (Chroma, Flask, chunking) stays driven by `.env` / `docker-compose`.
 
 ## Data
 
-Place the source emails in `data/`, organised by sender/party, e.g.:
+`data/` splits into two independent roots — input you provide vs. output the app
+generates — configurable via `SOURCE_DIR` / `GENERATED_DIR` in `.env` (defaults shown):
+
+Place the source emails in `data/sources/`, organised by sender/party, e.g.:
 
 ```
-data/
+data/sources/
   mails de dubois/      001 ….eml, 002 ….eml, …
   mails de leroy/
   mails de lefebvre/
+  uploads/              .eml files added via the web UI
   …
 ```
 
-Extracted attachments, OCR text, the SQLite database and the index are **generated**
-by indexing and stay local (ignored by git).
+Extracted attachments, OCR text, the SQLite database and `settings.json` are
+**generated** by indexing/the app and land under `data/generated/` (ignored by git):
+
+```
+data/generated/
+  attachments/           extracted from emails
+  extracted_text/        OCR
+  app.sqlite             registry, document graph, enrichment, eval data
+  settings.json          /settings overrides (secrets — never committed)
+```
+
+Existing installs created before this split can be migrated in place (stop the app
+first):
+
+```bash
+python migrate.py reorganize --yes
+```
 
 ## Portability & migration
 

@@ -1,4 +1,4 @@
-"""Graphe de connaissance en SQLite (data/app.sqlite).
+"""Graphe de connaissance en SQLite (data/generated/app.sqlite).
 
 Trois tables, alimentées à l'indexation par l'enrichissement LLM (parsing/enrich.py)
 et par les liens déterministes (threading, codes partagés) :

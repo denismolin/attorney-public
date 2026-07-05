@@ -23,7 +23,7 @@ and the **three conversational agents** built on top — including the agentic
                  │ embeddings + metadata + graph edges
        ┌─────────┼──────────────────────────┐
        ▼         ▼                           ▼
-  ChromaDB   data/app.sqlite          knowledge graph
+  ChromaDB   data/generated/app.sqlite  knowledge graph
  (vectors)   (registry, enrichment,   (doc ↔ doc edges,
              eval data)                in app.sqlite)
        │         │                           │
@@ -100,9 +100,12 @@ document to its attachments, to sibling emails in the same thread, and to docume
 sharing a reference/code. These edges power graph expansion at query time (§3.2).
 
 ### Where data lives
-- **ChromaDB** — chunk vectors + metadata, accessed over HTTP (`HttpClient`).
-- **`data/app.sqlite`** — document registry, indexing progress/log, the knowledge
-  graph, LLM enrichment, and evaluation data. (Confidential `data/` is gitignored.)
+- **ChromaDB** — chunk vectors + metadata, accessed over HTTP (`HttpClient`), stored
+  in a Docker named volume outside `data/`.
+- **`data/generated/app.sqlite`** — document registry, indexing progress/log, the
+  knowledge graph, LLM enrichment, and evaluation data.
+- **`data/sources/`** — the source `.eml` files (input, not generated).
+  (Confidential `data/` is gitignored in full.)
 
 ---
 

@@ -8,7 +8,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Callable
 
-from config import DATA_DIR
+from config import GENERATED_DIR
 from parsing.eml_parser import Attachment
 
 # Seuil : en dessous de N caractères extraits d'un PDF, on considère que c'est
@@ -17,8 +17,8 @@ _PDF_MIN_CHARS = 40
 
 
 def _abs_path(att: Attachment) -> Path:
-    """stored_path est relatif au parent de data/ ; on reconstruit l'absolu."""
-    return (DATA_DIR.parent / att.stored_path).resolve()
+    """stored_path est relatif au parent de GENERATED_DIR ; on reconstruit l'absolu."""
+    return (GENERATED_DIR.parent / att.stored_path).resolve()
 
 
 def _extract_pdf(path: Path) -> tuple[str, bool]:

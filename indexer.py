@@ -1,7 +1,7 @@
 """Pipeline d'indexation monitoré (jalon 1), exécuté dans un thread de fond.
 
 Étapes : parse .eml -> classement affaire -> extraction PJ faciles -> chunks ->
-embeddings -> upsert ChromaDB. Progression et journal écrits dans data/app.sqlite
+embeddings -> upsert ChromaDB. Progression et journal écrits dans data/generated/app.sqlite
 (lus par /admin via polling). Idempotence par content_hash : un document inchangé
 et déjà indexé est skippé.
 

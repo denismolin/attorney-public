@@ -15,14 +15,24 @@ from dotenv import load_dotenv
 
 # Racine du projet (ce fichier est à la racine).
 ROOT = Path(__file__).resolve().parent
+# data/ se scinde en deux racines indépendantes (configurables via .env) :
+#   - SOURCE_DIR    : entrée fournie par l'utilisateur (emails "mails de */", uploads/).
+#   - GENERATED_DIR : sorties techniques (PJ extraites, texte OCR, SQLite, settings.json).
+# Les deux défaultent sous data/ pour ne rien casser en place, mais peuvent pointer
+# n'importe où (ex. disques séparés). DATA_DIR reste défini comme parent commun par
+# défaut, utilisé uniquement pour calculer ces défauts et pour de vieux chemins stockés
+# en base (cf. app.py._resolve_path, parsing/attachments.py._abs_path).
 DATA_DIR = ROOT / "data"
-ATTACHMENTS_DIR = DATA_DIR / "attachments"
-EXTRACTED_TEXT_DIR = DATA_DIR / "extracted_text"
-UPLOADS_DIR = DATA_DIR / "uploads"
-DB_PATH = DATA_DIR / "app.sqlite"
-# Réglages saisis via l'UI (/settings). Surcharge le .env. Sous data/ → gitignoré
+SOURCE_DIR = Path(os.environ.get("SOURCE_DIR") or (DATA_DIR / "sources"))
+GENERATED_DIR = Path(os.environ.get("GENERATED_DIR") or (DATA_DIR / "generated"))
+
+UPLOADS_DIR = SOURCE_DIR / "uploads"
+ATTACHMENTS_DIR = GENERATED_DIR / "attachments"
+EXTRACTED_TEXT_DIR = GENERATED_DIR / "extracted_text"
+DB_PATH = GENERATED_DIR / "app.sqlite"
+# Réglages saisis via l'UI (/settings). Surcharge le .env. Sous GENERATED_DIR → gitignoré
 # et EXCLU de l'archive de migration (cf. migrate.py). Contient des secrets en clair.
-SETTINGS_PATH = DATA_DIR / "settings.json"
+SETTINGS_PATH = GENERATED_DIR / "settings.json"
 
 # Champs pilotés par le menu /settings (providers, modèles, clés). L'infra
 # (Chroma, Flask, chunking) reste réservée au .env / docker-compose.
@@ -104,16 +114,16 @@ class Config:
     embed_batch_delay: float = field(default_factory=lambda: float(_get("EMBED_BATCH_DELAY", "0.3")))
 
     def ensure_dirs(self) -> None:
-        """Crée les répertoires générés s'ils n'existent pas."""
+        """Crée les répertoires source/générés s'ils n'existent pas."""
+        UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
         ATTACHMENTS_DIR.mkdir(parents=True, exist_ok=True)
         EXTRACTED_TEXT_DIR.mkdir(parents=True, exist_ok=True)
-        UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
     # ----------------------------------------------------------------------- #
     # Réglages runtime (menu /settings) — surcouche persistée sur le .env.
     # ----------------------------------------------------------------------- #
     def load_overrides(self) -> None:
-        """Applique les réglages de data/settings.json par-dessus le .env (au démarrage)."""
+        """Applique les réglages de GENERATED_DIR/settings.json par-dessus le .env (au démarrage)."""
         if not SETTINGS_PATH.exists():
             return
         try:
@@ -148,7 +158,7 @@ class Config:
         self._save_overrides()
 
     def _save_overrides(self) -> None:
-        DATA_DIR.mkdir(parents=True, exist_ok=True)
+        GENERATED_DIR.mkdir(parents=True, exist_ok=True)
         snapshot = {k: getattr(self, k) for k in MANAGED_FIELDS}
         SETTINGS_PATH.write_text(
             json.dumps(snapshot, ensure_ascii=False, indent=2), encoding="utf-8"

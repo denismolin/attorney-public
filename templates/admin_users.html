@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block nav_admin_users %}active{% endblock %}
+{% block title %}Utilisateurs — Succession DUPONT{% endblock %}
+
+{% block content %}
+<div class="panel">
+  <h1>Utilisateurs</h1>
+  <p class="muted">
+    Les mots de passe sont générés automatiquement et affichés une seule fois,
+    au moment de la création ou d'une réinitialisation — notez-les immédiatement.
+  </p>
+
+  <table class="maillist" id="users-table">
+    <thead>
+      <tr>
+        <th>Identifiant</th>
+        <th>Rôle</th>
+        <th>Créé le</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for u in users %}
+      <tr data-id="{{ u.id }}">
+        <td>{{ u.username }}</td>
+        <td>{{ u.role }}</td>
+        <td class="muted">{{ u.created_at | int if u.created_at else "" }}</td>
+        <td style="display:flex; gap:0.5rem;">
+          <button type="button" class="btn-secondary btn-sm reset-btn" data-id="{{ u.id }}">Réinitialiser le mot de passe</button>
+          <button type="button" class="btn-secondary btn-sm delete-btn" data-id="{{ u.id }}">Supprimer</button>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <h2 style="margin-top:1.4rem;">Créer un utilisateur</h2>
+  <div class="eval-form-grid" style="max-width:520px;">
+    <label>Identifiant
+      <input id="new-username" class="eval-select" placeholder="ex. jdupont">
+    </label>
+    <label>Rôle
+      <select id="new-role" class="eval-select">
+        <option value="user" selected>user</option>
+        <option value="admin">admin</option>
+      </select>
+    </label>
+  </div>
+  <div style="margin-top:0.8rem; display:flex; gap:0.8rem; align-items:center;">
+    <button id="create-btn">Créer</button>
+    <span id="create-msg" class="muted"></span>
+  </div>
+
+  <div id="password-reveal" class="warn" style="display:none; margin-top:1rem;">
+    <strong>Mot de passe généré</strong> (à noter maintenant, il ne sera plus affiché) :
+    <div style="font-family: ui-monospace, monospace; font-size:1.1rem; margin-top:0.4rem;" id="password-reveal-value"></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='admin_users.js') }}"></script>
+{% endblock %}

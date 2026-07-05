@@ -4,7 +4,7 @@
   utf-8/base64, multipart) via `email.policy.default`.
 - Reconstruction du fil via In-Reply-To / References.
 - `doc_id` stable (hash) pour l'idempotence de l'indexation.
-- Extraction des pièces jointes sur disque (sous data/attachments/<doc_id>/).
+- Extraction des pièces jointes sur disque (sous data/generated/attachments/<doc_id>/).
 
 Le tri chronologique se fait sur la date réelle d'envoi (header Date, UTC).
 Les numéros de fichier (001, 002…) ne sont chronologiques QUE par correspondant.
@@ -21,7 +21,7 @@ from email.message import EmailMessage
 from email.utils import parsedate_to_datetime
 from pathlib import Path
 
-from config import ATTACHMENTS_DIR, DATA_DIR
+from config import ATTACHMENTS_DIR, GENERATED_DIR, SOURCE_DIR
 
 # Images inline de signature à ignorer en-dessous de cette taille (octets).
 INLINE_IMAGE_MIN_BYTES = 20_000
@@ -166,7 +166,7 @@ def _extract_attachments(msg: EmailMessage, email_id: str) -> list[Attachment]:
                 filename=filename,
                 mime=content_type,
                 size=size,
-                stored_path=str(stored.relative_to(DATA_DIR.parent)),
+                stored_path=str(stored.relative_to(GENERATED_DIR.parent)),
                 parent_email_id=email_id,
             )
         )
@@ -221,7 +221,7 @@ def parse_eml(path: Path, correspondent: str) -> Email:
     )
 
 
-def parse_all(data_dir: Path = DATA_DIR) -> list[Email]:
+def parse_all(data_dir: Path = SOURCE_DIR) -> list[Email]:
     """Parcourt les 6 dossiers, déduplique par Message-ID, trie par date réelle."""
     emails: list[Email] = []
     seen_message_ids: set[str] = set()

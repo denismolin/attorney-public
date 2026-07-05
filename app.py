@@ -12,7 +12,9 @@ Routes :
 """
 from __future__ import annotations
 
+import functools
 import os
+import secrets
 from pathlib import Path
 
 from flask import (
@@ -25,12 +27,21 @@ from flask import (
     send_file,
     stream_with_context,
 )
+from flask_login import (
+    LoginManager,
+    UserMixin,
+    current_user,
+    login_required,
+    login_user,
+    logout_user,
+)
 
+import auth_state
 import eval_state
 import graph_state
 import indexer
 import state
-from config import DATA_DIR, UPLOADS_DIR, cfg
+from config import GENERATED_DIR, UPLOADS_DIR, cfg
 from parsing.cleaner import clean_body
 from parsing.eml_parser import parse_eml
 from rag.index import heartbeat_ok
@@ -40,24 +51,102 @@ from viz.network_viz import build_network_html
 app = Flask(__name__)
 # Archives de migration volumineuses (embeddings) → plafond d'upload généreux (2 Go).
 app.config["MAX_CONTENT_LENGTH"] = 2 * 1024 * 1024 * 1024
+app.config["SECRET_KEY"] = os.environ.get("FLASK_SECRET_KEY") or secrets.token_hex(32)
+if not os.environ.get("FLASK_SECRET_KEY"):
+    print("[auth] FLASK_SECRET_KEY absente : clé de session éphémère générée "
+          "(les connexions ne survivront pas à un redémarrage).")
+
 cfg.ensure_dirs()
 state.init_db()
 state.reset_stale_running()
 eval_state.init_eval_db()
 graph_state.init_graph_db()
+auth_state.init_users_db()
+
+_admin_generated_password = auth_state.ensure_admin_bootstrap(
+    admin_username=os.environ.get("ADMIN_USERNAME", "admin"),
+    admin_password=os.environ.get("ADMIN_PASSWORD"),
+)
+if _admin_generated_password:
+    print(
+        "\n"
+        "==================================================================\n"
+        f"  Compte admin créé — identifiant : {os.environ.get('ADMIN_USERNAME', 'admin')}\n"
+        f"  Mot de passe généré (à noter, affiché une seule fois) : {_admin_generated_password}\n"
+        "==================================================================\n"
+    )
+
+login_manager = LoginManager()
+login_manager.login_view = "login_page"
+login_manager.init_app(app)
+
+
+class User(UserMixin):
+    def __init__(self, row: dict):
+        self.id = row["id"]
+        self.username = row["username"]
+        self.role = row["role"]
+        self.must_change_password = bool(row["must_change_password"])
+
+    def get_id(self) -> str:
+        return str(self.id)
+
+
+@login_manager.user_loader
+def load_user(user_id: str):
+    row = auth_state.get_user_by_id(int(user_id))
+    return User(row) if row else None
+
+
+def admin_required(view):
+    @functools.wraps(view)
+    @login_required
+    def wrapped(*args, **kwargs):
+        if current_user.role != "admin":
+            abort(403)
+        return view(*args, **kwargs)
+    return wrapped
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login_page():
+    if current_user.is_authenticated:
+        return _redirect_home()
+    error = None
+    if request.method == "POST":
+        username = (request.form.get("username") or "").strip()
+        password = request.form.get("password") or ""
+        row = auth_state.verify_password(username, password)
+        if row:
+            login_user(User(row))
+            return _redirect_home()
+        error = "Identifiants invalides."
+    return render_template("login.html", error=error)
+
+
+def _redirect_home():
+    from flask import redirect, url_for
+    return redirect(url_for("index"))
+
+
+@app.route("/logout", methods=["POST"])
+@login_required
+def logout():
+    logout_user()
+    return _redirect_home()
 
 
 def _resolve_path(stored: str) -> Path:
-    """Résout un source_path stocké en base, qu'il soit absolu local ou Docker (/app/data/...)."""
+    """Résout un source_path stocké en base, qu'il soit absolu local ou Docker (/app/data/generated/...)."""
     p = Path(stored)
     if p.exists():
         return p
-    # Chemin Docker : /app/data/... -> DATA_DIR/...
+    # Chemin Docker : /app/data/generated/... -> GENERATED_DIR/...
     s = stored.replace("\\", "/")
-    for prefix in ("/app/data/", "/app/data"):
+    for prefix in ("/app/data/generated/", "/app/data/generated"):
         if s.startswith(prefix):
             relative = s[len(prefix):]
-            candidate = DATA_DIR / relative
+            candidate = GENERATED_DIR / relative
             if candidate.exists():
                 return candidate
     return p  # inexistant, sera géré par l'appelant
@@ -67,6 +156,7 @@ def _resolve_path(stored: str) -> Path:
 # Navigation
 # --------------------------------------------------------------------------- #
 @app.route("/")
+@login_required
 def index():
     docs = state.list_documents()
     timeline_html = build_timeline_html(docs)
@@ -81,6 +171,7 @@ def index():
 
 
 @app.route("/graph")
+@login_required
 def graph_page():
     docs = state.list_documents()
     with graph_state._conn() as c:
@@ -97,6 +188,7 @@ def graph_page():
 
 
 @app.route("/synthesis")
+@login_required
 def synthesis_page():
     return render_template(
         "synthesis.html",
@@ -106,6 +198,7 @@ def synthesis_page():
 
 
 @app.route("/api/synthesis/chat", methods=["POST"])
+@login_required
 def api_synthesis_chat():
     payload = request.get_json(force=True) or {}
     question = (payload.get("question") or "").strip()
@@ -132,6 +225,7 @@ def api_synthesis_chat():
 
 
 @app.route("/api/synthesis/stream", methods=["POST"])
+@login_required
 def api_synthesis_stream():
     payload = request.get_json(force=True) or {}
     question = (payload.get("question") or "").strip()
@@ -183,6 +277,7 @@ def _clean_effort(value) -> str | None:
 
 
 @app.route("/advisor")
+@login_required
 def advisor_page():
     return render_template(
         "advisor.html",
@@ -192,6 +287,7 @@ def advisor_page():
 
 
 @app.route("/api/advisor/chat", methods=["POST"])
+@login_required
 def api_advisor_chat():
     payload = request.get_json(force=True) or {}
     question = (payload.get("question") or "").strip()
@@ -220,6 +316,7 @@ def api_advisor_chat():
 
 
 @app.route("/api/advisor/stream", methods=["POST"])
+@login_required
 def api_advisor_stream():
     payload = request.get_json(force=True) or {}
     question = (payload.get("question") or "").strip()
@@ -264,6 +361,7 @@ def api_advisor_stream():
 
 
 @app.route("/email/<doc_id>")
+@login_required
 def email_detail(doc_id: str):
     doc = state.get_document(doc_id)
     if not doc or doc.get("type") != "mail":
@@ -354,6 +452,7 @@ def _doc_graph_context(doc_id: str, doc: dict) -> dict:
 
 
 @app.route("/api/doc/<doc_id>/graph")
+@login_required
 def api_doc_graph(doc_id: str):
     doc = state.get_document(doc_id)
     if not doc:
@@ -362,6 +461,7 @@ def api_doc_graph(doc_id: str):
 
 
 @app.route("/attachment/<att_id>")
+@login_required
 def attachment_download(att_id: str):
     doc = state.get_document(att_id)
     if not doc or doc.get("type") != "attachment":
@@ -369,8 +469,8 @@ def attachment_download(att_id: str):
     abs_path = _resolve_path(doc["source_path"]).resolve()
     if not abs_path.exists():
         abort(404)
-    # Sécurité : rester sous data/
-    if DATA_DIR.resolve() not in abs_path.parents:
+    # Sécurité : rester sous GENERATED_DIR (où vivent les PJ extraites).
+    if GENERATED_DIR.resolve() not in abs_path.parents:
         abort(403)
     return send_file(abs_path, as_attachment=True, download_name=doc["subject"])
 
@@ -379,6 +479,7 @@ def attachment_download(att_id: str):
 # Chat
 # --------------------------------------------------------------------------- #
 @app.route("/chat")
+@login_required
 def chat_page():
     return render_template(
         "chat.html",
@@ -389,6 +490,7 @@ def chat_page():
 
 
 @app.route("/api/chat", methods=["POST"])
+@login_required
 def api_chat():
     payload = request.get_json(force=True) or {}
     question = (payload.get("question") or "").strip()
@@ -416,6 +518,7 @@ def api_chat():
 # Indexation
 # --------------------------------------------------------------------------- #
 @app.route("/admin")
+@admin_required
 def admin_page():
     return render_template(
         "admin.html",
@@ -431,8 +534,9 @@ _UPLOAD_MAX_BYTES = 20 * 1024 * 1024  # 20 Mo par fichier
 
 
 @app.route("/api/upload", methods=["POST"])
+@admin_required
 def api_upload():
-    """Dépose un ou plusieurs fichiers .eml dans data/uploads/.
+    """Dépose un ou plusieurs fichiers .eml dans SOURCE_DIR/uploads/.
 
     Retourne la liste des fichiers acceptés et refusés.
     """
@@ -481,6 +585,7 @@ def api_upload():
 
 
 @app.route("/api/index/start", methods=["POST"])
+@admin_required
 def api_index_start():
     if not heartbeat_ok():
         return jsonify({"error": "ChromaDB injoignable. Vérifiez le service chromadb."}), 503
@@ -494,11 +599,13 @@ def api_index_start():
 
 
 @app.route("/api/index/status")
+@admin_required
 def api_index_status():
     return jsonify(state.get_status())
 
 
 @app.route("/api/index/reset", methods=["POST"])
+@admin_required
 def api_index_reset():
     if state.is_running():
         return jsonify({"error": "Indexation en cours — attendez la fin avant de réinitialiser."}), 409
@@ -530,6 +637,7 @@ def _available_providers() -> list[str]:
 
 
 @app.route("/eval")
+@login_required
 def eval_page():
     return render_template(
         "eval.html",
@@ -574,6 +682,7 @@ def _fetch_models_for_provider(provider: str) -> tuple[list[str], str | None]:
 
 
 @app.route("/api/eval/models/<provider>")
+@login_required
 def api_eval_models(provider: str):
     """Retourne la liste des modèles disponibles pour un provider donné."""
     models, err = _fetch_models_for_provider(provider)
@@ -583,6 +692,7 @@ def api_eval_models(provider: str):
 
 
 @app.route("/api/chat/models/<provider>")
+@login_required
 def api_chat_models(provider: str):
     """Mêmes modèles que /api/eval/models — partagé par la page Chat."""
     models, err = _fetch_models_for_provider(provider)
@@ -592,6 +702,7 @@ def api_chat_models(provider: str):
 
 
 @app.route("/api/eval/generate", methods=["POST"])
+@login_required
 def api_eval_generate():
     from eval.generator import start_async as gen_start
     payload = request.get_json(force=True) or {}
@@ -611,11 +722,13 @@ def api_eval_generate():
 
 
 @app.route("/api/eval/gen_status")
+@login_required
 def api_eval_gen_status():
     return jsonify(eval_state.get_gen_status())
 
 
 @app.route("/api/eval/gen_cancel", methods=["POST"])
+@login_required
 def api_eval_gen_cancel():
     from eval.generator import cancel as gen_cancel
     gen_cancel()
@@ -623,6 +736,7 @@ def api_eval_gen_cancel():
 
 
 @app.route("/api/eval/questions", methods=["GET"])
+@login_required
 def api_eval_questions_list():
     category = request.args.get("category")
     difficulty = request.args.get("difficulty")
@@ -630,6 +744,7 @@ def api_eval_questions_list():
 
 
 @app.route("/api/eval/questions", methods=["POST"])
+@login_required
 def api_eval_question_add():
     payload = request.get_json(force=True) or {}
     if not payload.get("question") or not payload.get("expected"):
@@ -639,6 +754,7 @@ def api_eval_question_add():
 
 
 @app.route("/api/eval/questions/<int:q_id>", methods=["PUT"])
+@login_required
 def api_eval_question_update(q_id: int):
     payload = request.get_json(force=True) or {}
     eval_state.update_question(q_id, payload)
@@ -646,18 +762,21 @@ def api_eval_question_update(q_id: int):
 
 
 @app.route("/api/eval/questions/<int:q_id>", methods=["DELETE"])
+@login_required
 def api_eval_question_delete(q_id: int):
     eval_state.delete_question(q_id)
     return jsonify({"status": "deleted"})
 
 
 @app.route("/api/eval/questions/clear", methods=["DELETE"])
+@login_required
 def api_eval_questions_clear():
     n = eval_state.clear_questions()
     return jsonify({"deleted": n})
 
 
 @app.route("/api/eval/export")
+@login_required
 def api_eval_export():
     import io
     import json as _json
@@ -673,6 +792,7 @@ def api_eval_export():
 
 
 @app.route("/api/eval/import", methods=["POST"])
+@login_required
 def api_eval_import():
     import json as _json
     f = request.files.get("file")
@@ -689,6 +809,7 @@ def api_eval_import():
 
 
 @app.route("/api/eval/run", methods=["POST"])
+@login_required
 def api_eval_run():
     from eval.judge import start_run
     payload = request.get_json(force=True) or {}
@@ -706,6 +827,7 @@ def api_eval_run():
 
 
 @app.route("/api/eval/run_status/<run_id>")
+@login_required
 def api_eval_run_status(run_id: str):
     run = eval_state.get_run(run_id)
     if not run:
@@ -714,6 +836,7 @@ def api_eval_run_status(run_id: str):
 
 
 @app.route("/api/eval/run_cancel/<run_id>", methods=["POST"])
+@login_required
 def api_eval_run_cancel(run_id: str):
     from eval.judge import cancel_run
     ok = cancel_run(run_id)
@@ -721,6 +844,7 @@ def api_eval_run_cancel(run_id: str):
 
 
 @app.route("/api/eval/results/<run_id>")
+@login_required
 def api_eval_results(run_id: str):
     run = eval_state.get_run(run_id)
     if not run:
@@ -734,11 +858,13 @@ def api_eval_results(run_id: str):
 
 
 @app.route("/api/eval/runs")
+@login_required
 def api_eval_runs():
     return jsonify(eval_state.list_runs())
 
 
 @app.route("/api/eval/download/<run_id>")
+@login_required
 def api_eval_download(run_id: str):
     import io
     fmt = request.args.get("format", "md")
@@ -764,6 +890,7 @@ def api_eval_download(run_id: str):
 # Migration / sauvegarde (export-import des bases)
 # --------------------------------------------------------------------------- #
 @app.route("/api/migrate/export")
+@admin_required
 def api_migrate_export():
     """Crée une archive de migration et la renvoie en téléchargement.
 
@@ -783,6 +910,7 @@ def api_migrate_export():
 
 
 @app.route("/api/migrate/import", methods=["POST"])
+@admin_required
 def api_migrate_import():
     """Importe une archive de migration (.zip) — réinjecte SQLite + vecteurs Chroma."""
     if state.is_running():
@@ -809,6 +937,7 @@ def api_migrate_import():
 # Réglages (providers, clés API, modèles) — appliqués à chaud
 # --------------------------------------------------------------------------- #
 @app.route("/settings")
+@admin_required
 def settings_page():
     return render_template(
         "settings.html",
@@ -818,6 +947,7 @@ def settings_page():
 
 
 @app.route("/api/settings", methods=["GET"])
+@admin_required
 def api_settings_get():
     return jsonify(cfg.public_dict())
 
@@ -830,6 +960,7 @@ _SETTINGS_TEXT_FIELDS = (
 
 
 @app.route("/api/settings", methods=["POST"])
+@admin_required
 def api_settings_post():
     from config import KEY_FIELDS
     payload = request.get_json(force=True) or {}
@@ -850,6 +981,7 @@ def api_settings_post():
 
 
 @app.route("/api/settings/test", methods=["POST"])
+@admin_required
 def api_settings_test():
     """Valide un provider en listant ses modèles (clé/endpoint OK ?)."""
     payload = request.get_json(force=True) or {}
@@ -861,6 +993,74 @@ def api_settings_test():
         return jsonify({"ok": False, "error": err})
     return jsonify({"ok": True, "n_models": len(models),
                     "sample": models[:5]})
+
+
+# --------------------------------------------------------------------------- #
+# Utilisateurs (admin uniquement)
+# --------------------------------------------------------------------------- #
+def _user_public(row: dict) -> dict:
+    return {
+        "id": row["id"],
+        "username": row["username"],
+        "role": row["role"],
+        "must_change_password": bool(row["must_change_password"]),
+        "created_at": row["created_at"],
+        "created_by": row["created_by"],
+    }
+
+
+@app.route("/admin/users")
+@admin_required
+def admin_users_page():
+    return render_template("admin_users.html", users=[_user_public(u) for u in auth_state.list_users()])
+
+
+@app.route("/api/users", methods=["GET"])
+@admin_required
+def api_users_list():
+    return jsonify([_user_public(u) for u in auth_state.list_users()])
+
+
+@app.route("/api/users", methods=["POST"])
+@admin_required
+def api_users_create():
+    payload = request.get_json(force=True) or {}
+    username = (payload.get("username") or "").strip()
+    role = (payload.get("role") or "user").strip()
+    if not username:
+        return jsonify({"error": "Identifiant requis."}), 400
+    if role not in ("admin", "user"):
+        return jsonify({"error": "Rôle invalide."}), 400
+    if auth_state.get_user_by_username(username):
+        return jsonify({"error": "Cet identifiant existe déjà."}), 409
+    password = auth_state.generate_password()
+    user_id = auth_state.create_user(username, password, role=role, created_by=current_user.username)
+    return jsonify({"id": user_id, "username": username, "role": role, "password": password})
+
+
+@app.route("/api/users/<int:user_id>/reset-password", methods=["POST"])
+@admin_required
+def api_users_reset_password(user_id: int):
+    row = auth_state.get_user_by_id(user_id)
+    if not row:
+        abort(404)
+    password = auth_state.generate_password()
+    auth_state.set_password(user_id, password, must_change=True)
+    return jsonify({"id": user_id, "password": password})
+
+
+@app.route("/api/users/<int:user_id>/delete", methods=["POST"])
+@admin_required
+def api_users_delete(user_id: int):
+    row = auth_state.get_user_by_id(user_id)
+    if not row:
+        abort(404)
+    if user_id == current_user.id:
+        return jsonify({"error": "Impossible de supprimer votre propre compte."}), 400
+    if row["role"] == "admin" and auth_state.count_users(role="admin") <= 1:
+        return jsonify({"error": "Impossible de supprimer le dernier compte admin."}), 400
+    auth_state.delete_user(user_id)
+    return jsonify({"status": "deleted"})
 
 
 if __name__ == "__main__":

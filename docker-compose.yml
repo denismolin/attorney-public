@@ -1,10 +1,13 @@
 # Jalon 1 — 2 services : app (Flask) + chromadb (vecteurs, persistant).
 # Jalon 2 ajoutera un 3e service : postgres (tableaux extraits).
+volumes:
+  chroma-data:   # vecteurs ChromaDB — volume nommé, découplé de data/ (sources/générés)
+
 services:
   chromadb:
     image: chromadb/chroma:1.4.4-local
     volumes:
-      - ./data/chromadb:/data
+      - chroma-data:/data
     environment:
       - IS_PERSISTENT=TRUE
       - ANONYMIZED_TELEMETRY=FALSE
@@ -39,7 +42,8 @@ services:
       - CHROMA_HOST=chromadb   # surcharge : dans le réseau compose, le host est le nom du service
       - CHROMA_PORT=8000
     volumes:
-      - ./data:/app/data   # .eml en entrée + PJ/texte/sqlite générés (persistance hôte)
+      - ./data/sources:/app/data/sources       # .eml en entrée + uploads/ (persistance hôte)
+      - ./data/generated:/app/data/generated   # PJ/texte/sqlite/settings générés (persistance hôte)
     ports:
       - "5000:5000"
     depends_on:

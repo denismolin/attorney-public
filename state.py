@@ -1,4 +1,4 @@
-"""État partagé en SQLite (data/app.sqlite) : progression d'indexation + registre.
+"""État partagé en SQLite (data/generated/app.sqlite) : progression d'indexation + registre.
 
 - `index_progress` : une seule ligne (id=1) avec l'état courant du job.
 - `index_log`      : journal défilant (messages horodatés).
