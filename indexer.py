@@ -146,8 +146,16 @@ def is_running() -> bool:
     return state.is_running()
 
 
-def start_async(enrich_provider: str | None = None, enrich_model: str | None = None) -> bool:
-    """Démarre l'indexation en arrière-plan. False si déjà en cours."""
+def start_async(
+    enrich_provider: str | None = None,
+    enrich_model: str | None = None,
+    force: bool = False,
+) -> bool:
+    """Démarre l'indexation en arrière-plan. False si déjà en cours.
+
+    `force=True` ré-exécute l'OCR/enrichissement même pour les documents
+    inchangés (ex. pour ré-enrichir tout le fonds avec un nouveau modèle).
+    """
     global _thread
     with _lock:
         if state.is_running():
@@ -155,7 +163,7 @@ def start_async(enrich_provider: str | None = None, enrich_model: str | None = N
         state.init_db()
         _thread = threading.Thread(
             target=_run_safe,
-            kwargs={"enrich_provider": enrich_provider, "enrich_model": enrich_model},
+            kwargs={"enrich_provider": enrich_provider, "enrich_model": enrich_model, "force": force},
             name="indexer",
             daemon=True,
         )
@@ -163,9 +171,9 @@ def start_async(enrich_provider: str | None = None, enrich_model: str | None = N
         return True
 
 
-def _run_safe(enrich_provider: str | None = None, enrich_model: str | None = None) -> None:
+def _run_safe(enrich_provider: str | None = None, enrich_model: str | None = None, force: bool = False) -> None:
     try:
-        run(enrich_provider=enrich_provider, enrich_model=enrich_model)
+        run(force=force, enrich_provider=enrich_provider, enrich_model=enrich_model)
     except Exception as exc:  # pragma: no cover
         import traceback
         tb = traceback.format_exc()

@@ -639,7 +639,10 @@ def api_index_start():
     payload = request.get_json(force=True, silent=True) or {}
     enrich_provider = payload.get("enrich_provider") or None
     enrich_model = payload.get("enrich_model") or None
-    started = indexer.start_async(enrich_provider=enrich_provider, enrich_model=enrich_model)
+    force_reindex = bool(payload.get("force"))
+    started = indexer.start_async(
+        enrich_provider=enrich_provider, enrich_model=enrich_model, force=force_reindex
+    )
     if not started:
         return jsonify({"error": "Une indexation est déjà en cours."}), 409
     return jsonify({"status": "started"})

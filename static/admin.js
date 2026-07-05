@@ -270,13 +270,24 @@ function handleDrop(event) {
     }
   });
 
+  const forceReindex = document.getElementById("force-reindex");
+
   startbtn.addEventListener("click", async function () {
+    if (forceReindex && forceReindex.checked) {
+      if (!confirm(
+        "Forcer le ré-enrichissement de TOUS les documents, même inchangés ? " +
+        "Cela relance l'OCR et l'appel LLM pour l'ensemble du fonds (plus lent, re-facturé)."
+      )) {
+        return;
+      }
+    }
     startbtn.disabled = true;
     startbtn.textContent = "Indexation en cours…";
     try {
       const provider = enrichProvider ? enrichProvider.value : null;
       const model = enrichModel ? (enrichModel.value || null) : null;
-      const payload = { enrich_provider: provider, enrich_model: model };
+      const force = !!(forceReindex && forceReindex.checked);
+      const payload = { enrich_provider: provider, enrich_model: model, force: force };
       const resp = await fetch(api("/api/index/start"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },

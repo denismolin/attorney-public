@@ -58,6 +58,11 @@
     </label>
   </div>
 
+  <label style="display:flex; align-items:center; gap:0.4rem; margin-bottom:0.6rem; font-size:0.88rem; cursor:pointer;">
+    <input type="checkbox" id="force-reindex">
+    Forcer le ré-enrichissement de tous les documents (même inchangés) — utile après un changement de modèle. Plus lent et re-facture l'OCR/LLM pour tout le fonds.
+  </label>
+
   <div style="display:flex; gap:0.8rem; align-items:center; flex-wrap:wrap;">
     <button id="startbtn">Lancer l'indexation</button>
     <button id="resetbtn" class="btn-secondary" title="Vide ChromaDB et le registre SQLite pour repartir de zéro">🗑 Réinitialiser l'index</button>
