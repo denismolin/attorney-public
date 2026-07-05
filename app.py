@@ -22,10 +22,12 @@ from flask import (
     Response,
     abort,
     jsonify,
+    redirect,
     render_template,
     request,
     send_file,
     stream_with_context,
+    url_for,
 )
 from flask_login import (
     LoginManager,
@@ -47,11 +49,10 @@ from parsing.eml_parser import parse_eml
 from rag.index import heartbeat_ok
 from viz.timeline_viz import build_timeline_html
 from viz.network_viz import build_network_html
-from werkzeug.middleware.proxy_fix import ProxyFix
+from werkzeug.middleware.dispatcher import DispatcherMiddleware
+from werkzeug.wrappers import Response as WerkzeugResponse
 
 app = Flask(__name__)
-app.wsgi_app = ProxyFix(app.wsgi_app, x_prefix=1)
-app.config["APPLICATION_ROOT"] = os.environ.get("APPLICATION_ROOT", "/")
 # Archives de migration volumineuses (embeddings) → plafond d'upload généreux (2 Go).
 app.config["MAX_CONTENT_LENGTH"] = 2 * 1024 * 1024 * 1024
 app.config["SECRET_KEY"] = os.environ.get("FLASK_SECRET_KEY") or secrets.token_hex(32)
@@ -82,6 +83,12 @@ if _admin_generated_password:
 login_manager = LoginManager()
 login_manager.login_view = "login_page"
 login_manager.init_app(app)
+
+@login_manager.unauthorized_handler
+def unauthorized():
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "unauthorized"}), 401
+    return redirect(url_for(login_manager.login_view, next=request.url))
 
 
 class User(UserMixin):
@@ -1066,11 +1073,17 @@ def api_users_delete(user_id: int):
     return jsonify({"status": "deleted"})
 
 
+_root = os.environ.get("APPLICATION_ROOT", "/").rstrip("/")
+if _root:
+    app.config["APPLICATION_ROOT"] = _root
+    app = DispatcherMiddleware(WerkzeugResponse("Not found", status=404), {_root: app})
+
 if __name__ == "__main__":
     # use_reloader=False : le reloader redémarrerait le process et tuerait le
     # thread d'indexation de fond. threaded=True : sert le polling /status pendant
     # que l'indexation tourne.
-    app.run(
+    flask_app = app.mounts[_root] if _root else app
+    flask_app.run(
         host=cfg.flask_host,
         port=cfg.flask_port,
         # Debug désactivé par défaut ; activer avec FLASK_DEBUG=1 en dev local.

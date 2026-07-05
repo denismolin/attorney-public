@@ -8,6 +8,8 @@ function handleDrop(event) {
 (function setupUpload() {
   const dropZone = document.getElementById("drop-zone");
   const fileInput = document.getElementById("file-input");
+  const folderBtn = document.getElementById("folder-select-btn");
+  const folderInput = document.getElementById("folder-input");
   const uploadResult = document.getElementById("upload-result");
 
   if (!dropZone || !fileInput) return;
@@ -17,6 +19,21 @@ function handleDrop(event) {
     if (fileInput.files.length) uploadFiles(Array.from(fileInput.files));
     fileInput.value = "";
   });
+
+  if (folderBtn && folderInput) {
+    folderBtn.addEventListener("click", () => folderInput.click());
+    folderInput.addEventListener("change", () => {
+      const emlFiles = Array.from(folderInput.files).filter((f) =>
+        f.name.toLowerCase().endsWith(".eml")
+      );
+      if (emlFiles.length) uploadFiles(emlFiles);
+      else {
+        uploadResult.style.display = "block";
+        uploadResult.innerHTML = '<span class="ko">Aucun fichier .eml trouvé dans ce dossier.</span>';
+      }
+      folderInput.value = "";
+    });
+  }
 
   window.uploadFiles = async function (files) {
     if (!files.length) return;
