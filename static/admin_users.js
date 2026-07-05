@@ -1,3 +1,5 @@
+const _root = (window.APP_ROOT || "").replace(/\/$/, ""); function api(path) { return _root + path; }
+
 // Gestion des utilisateurs : création, réinitialisation de mot de passe, suppression.
 (function () {
   const createBtn = document.getElementById("create-btn");
@@ -23,7 +25,7 @@
       createMsg.textContent = "Création…";
       createMsg.className = "muted";
       try {
-        const resp = await fetch("/api/users", {
+        const resp = await fetch(api("/api/users"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ username, role }),
@@ -53,7 +55,7 @@
       if (!confirm("Réinitialiser le mot de passe de cet utilisateur ?")) return;
       btn.disabled = true;
       try {
-        const resp = await fetch("/api/users/" + id + "/reset-password", { method: "POST" });
+        const resp = await fetch(api("/api/users/" + id + "/reset-password"), { method: "POST" });
         const data = await resp.json();
         if (!resp.ok) {
           alert("Erreur : " + (data.error || resp.status));
@@ -74,7 +76,7 @@
       if (!confirm("Supprimer cet utilisateur ?")) return;
       btn.disabled = true;
       try {
-        const resp = await fetch("/api/users/" + id + "/delete", { method: "POST" });
+        const resp = await fetch(api("/api/users/" + id + "/delete"), { method: "POST" });
         const data = await resp.json();
         if (!resp.ok) {
           alert("Erreur : " + (data.error || resp.status));

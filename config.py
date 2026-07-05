@@ -173,7 +173,12 @@ class Config:
         return {"configured": True, "hint": "••••" + tail}
 
     def public_dict(self) -> dict:
-        """Vue sûre de la config gérée (clés masquées) pour l'UI /settings."""
+        """Vue sûre de la config gérée (clés masquées) pour l'UI /settings.
+
+        Le champ est nommé `key_status` (pas `keys`) : dans un template Jinja,
+        `dict.keys` résout d'abord vers la méthode `dict.keys()` avant l'entrée
+        `"keys"` du dict, ce qui casse `settings.keys[prov]`.
+        """
         return {
             "embed_provider": self.embed_provider,
             "chat_provider": self.chat_provider,
@@ -181,8 +186,8 @@ class Config:
             "chat_model": self.chat_model,
             "mistral_chat_model": self.mistral_chat_model,
             "vllm_base_url": self.vllm_base_url or "",
-            "keys": {prov: self._mask(getattr(self, field_))
-                     for prov, field_ in KEY_FIELDS.items()},
+            "key_status": {prov: self._mask(getattr(self, field_))
+                           for prov, field_ in KEY_FIELDS.items()},
         }
 
 

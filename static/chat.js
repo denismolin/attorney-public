@@ -1,3 +1,5 @@
+const _root = (window.APP_ROOT || "").replace(/\/$/, ""); function api(path) { return _root + path; }
+
 // Chat multi-turn : conserve l'historique, l'envoie au serveur, gère clear + copie.
 (function () {
   const form = document.getElementById("chatform");
@@ -57,7 +59,7 @@
     if (!provider || !chatModel) return;
     chatModel.innerHTML = '<option value="">Chargement…</option>';
     chatModel.disabled = true;
-    fetch("/api/chat/models/" + encodeURIComponent(provider))
+    fetch(api("/api/chat/models/" + encodeURIComponent(provider)))
       .then((r) => r.json())
       .then((data) => {
         chatModel.innerHTML = "";
@@ -214,7 +216,7 @@
       const priorHistory = history.slice(0, -1).map((m) => ({ role: m.role, content: m.content }));
       const provider = chatProvider ? chatProvider.value : null;
       const model = chatModel ? (chatModel.value || null) : null;
-      const resp = await fetch("/api/chat", {
+      const resp = await fetch(api("/api/chat"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ question, history: priorHistory, session_ctx: sessionCtx, chat_provider: provider, chat_model: model }),

@@ -33,6 +33,7 @@
   <main>
     {% block content %}{% endblock %}
   </main>
+  <script>window.APP_ROOT = "{{ request.script_root }}";</script>
   {% block scripts %}{% endblock %}
 </body>
 </html>

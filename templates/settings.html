@@ -60,7 +60,7 @@
     {% for prov, label in [("openai", "OpenAI"), ("anthropic", "Anthropic"), ("mistral", "Mistral")] %}
     <label>{{ label }}
       <input type="password" id="key_{{ prov }}" class="eval-select" autocomplete="off"
-             placeholder="{% if settings.keys[prov].configured %}configuré ({{ settings.keys[prov].hint }}){% else %}non configuré{% endif %}">
+             placeholder="{% if settings.key_status[prov].configured %}configuré ({{ settings.key_status[prov].hint }}){% else %}non configuré{% endif %}">
       <button type="button" class="btn-secondary test-btn" data-provider="{{ prov }}"
               style="margin-top:0.3rem;">Tester</button>
       <span class="test-result" data-provider="{{ prov }}" style="font-size:0.82rem;"></span>
@@ -77,7 +77,7 @@
     </label>
     <label>Token vLLM
       <input type="password" id="key_vllm" class="eval-select" autocomplete="off"
-             placeholder="{% if settings.keys.vllm.configured %}configuré ({{ settings.keys.vllm.hint }}){% else %}optionnel{% endif %}">
+             placeholder="{% if settings.key_status.vllm.configured %}configuré ({{ settings.key_status.vllm.hint }}){% else %}optionnel{% endif %}">
       <button type="button" class="btn-secondary test-btn" data-provider="vllm"
               style="margin-top:0.3rem;">Tester</button>
       <span class="test-result" data-provider="vllm" style="font-size:0.82rem;"></span>
@@ -96,5 +96,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', filename='settings.js') }}"></script>
+<script src="{{ url_for('static', filename='settings.js') }}?v={{ sv }}"></script>
 {% endblock %}

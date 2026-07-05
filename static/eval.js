@@ -1,3 +1,5 @@
+const _root = (window.APP_ROOT || "").replace(/\/$/, ""); function api(path) { return _root + path; }
+
 // Panel d'évaluation RAG — logique JS
 (function () {
   "use strict";
@@ -63,7 +65,7 @@
     if (!provider) return;
     sel.innerHTML = '<option value="">Chargement…</option>';
     sel.disabled = true;
-    fetch("/api/eval/models/" + encodeURIComponent(provider))
+    fetch(api("/api/eval/models/" + encodeURIComponent(provider)))
       .then(function (r) { return r.json(); })
       .then(function (data) {
         sel.innerHTML = "";
@@ -128,7 +130,7 @@
     document.getElementById("gen-bar").style.width = "0%";
     document.getElementById("gen-logbox").textContent = "";
 
-    fetch("/api/eval/generate", {
+    fetch(api("/api/eval/generate"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ provider: provider, model: model, n_questions: n, categories: categories, difficulties: difficulties })
@@ -148,7 +150,7 @@
   }
 
   function pollGenStatus() {
-    fetch("/api/eval/gen_status").then(function (r) { return r.json(); }).then(function (status) {
+    fetch(api("/api/eval/gen_status")).then(function (r) { return r.json(); }).then(function (status) {
       document.getElementById("gen-phase").textContent = status.phase || "—";
       var cur = status.current || 0;
       var tot = status.total || 0;
@@ -172,7 +174,7 @@
   }
 
   function cancelGeneration() {
-    fetch("/api/eval/gen_cancel", { method: "POST" }).catch(function () {});
+    fetch(api("/api/eval/gen_cancel"), { method: "POST" }).catch(function () {});
     document.getElementById("gen-cancel-btn").disabled = true;
   }
 
@@ -188,7 +190,7 @@
     if (diff) params.push("difficulty=" + encodeURIComponent(diff));
     if (params.length) url += "?" + params.join("&");
 
-    fetch(url).then(function (r) { return r.json(); }).then(function (rows) {
+    fetch(api(url)).then(function (r) { return r.json(); }).then(function (rows) {
       renderQuestionsTable(rows);
       updateDatasetCount(rows.length);
     }).catch(function (e) {
@@ -199,7 +201,7 @@
 
   function updateDatasetCount(n) {
     if (n === undefined) {
-      fetch("/api/eval/questions").then(function (r) { return r.json(); }).then(function (rows) {
+      fetch(api("/api/eval/questions")).then(function (r) { return r.json(); }).then(function (rows) {
         var el = document.getElementById("dataset-count");
         if (el) el.textContent = rows.length;
       }).catch(function () {});
@@ -210,7 +212,7 @@
   }
 
   function updateEvalQCount() {
-    fetch("/api/eval/questions").then(function (r) { return r.json(); }).then(function (rows) {
+    fetch(api("/api/eval/questions")).then(function (r) { return r.json(); }).then(function (rows) {
       var el = document.getElementById("eval-q-count");
       if (el) el.textContent = "toutes (" + rows.length + ")";
     }).catch(function () {});
@@ -241,11 +243,11 @@
 
   window._evalDeleteQ = function (id) {
     if (!confirm("Supprimer la question #" + id + " ?")) return;
-    fetch("/api/eval/questions/" + id, { method: "DELETE" }).then(function () { loadQuestions(); updateDatasetCount(); });
+    fetch(api("/api/eval/questions/" + id), { method: "DELETE" }).then(function () { loadQuestions(); updateDatasetCount(); });
   };
 
   window._evalEditQ = function (id) {
-    fetch("/api/eval/questions?category=&difficulty=").then(function (r) { return r.json(); }).then(function (rows) {
+    fetch(api("/api/eval/questions?category=&difficulty=")).then(function (r) { return r.json(); }).then(function (rows) {
       var q = rows.find(function (r) { return r.id === id; });
       if (!q) return;
       document.getElementById("edit-q-id").value = q.id;
@@ -267,7 +269,7 @@
       difficulty: document.getElementById("edit-difficulty").value,
       notes: document.getElementById("edit-notes").value,
     };
-    fetch("/api/eval/questions/" + id, {
+    fetch(api("/api/eval/questions/" + id), {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -287,7 +289,7 @@
     var q = document.getElementById("add-question").value.trim();
     var e = document.getElementById("add-expected").value.trim();
     if (!q || !e) { alert("Question et réponse attendue requis."); return; }
-    fetch("/api/eval/questions", {
+    fetch(api("/api/eval/questions"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -305,14 +307,14 @@
 
   // Export
   document.getElementById("export-btn").addEventListener("click", function () {
-    window.location.href = "/api/eval/export";
+    window.location.href = api("/api/eval/export");
   });
 
   // Effacer tout le dataset
   document.getElementById("clear-dataset-btn").addEventListener("click", function () {
     var count = parseInt(document.getElementById("dataset-count").textContent, 10) || 0;
     if (!confirm("Supprimer les " + count + " questions du dataset ? Cette action est irréversible.")) return;
-    fetch("/api/eval/questions/clear", { method: "DELETE" })
+    fetch(api("/api/eval/questions/clear"), { method: "DELETE" })
       .then(function (r) { return r.json(); })
       .then(function (data) {
         loadQuestions();
@@ -327,7 +329,7 @@
     if (!file) return;
     var formData = new FormData();
     formData.append("file", file);
-    fetch("/api/eval/import", { method: "POST", body: formData })
+    fetch(api("/api/eval/import"), { method: "POST", body: formData })
       .then(function (r) { return r.json(); })
       .then(function (data) {
         alert("Import : " + data.imported + " questions importées, " + (data.skipped || 0) + " ignorées.");
@@ -358,7 +360,7 @@
 
     document.getElementById("eval-start-btn").disabled = true;
 
-    fetch("/api/eval/run", {
+    fetch(api("/api/eval/run"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ provider: provider, model: model, threshold: threshold }),
@@ -391,7 +393,7 @@
   }
 
   function pollRunStatus(runId) {
-    fetch("/api/eval/run_status/" + runId).then(function (r) { return r.json(); }).then(function (run) {
+    fetch(api("/api/eval/run_status/" + runId)).then(function (r) { return r.json(); }).then(function (run) {
       var phaseEl = document.getElementById("run-phase-" + runId);
       var counterEl = document.getElementById("run-counter-" + runId);
       var barEl = document.getElementById("run-bar-" + runId);
@@ -412,11 +414,11 @@
 
   window._cancelRun = function (runId) {
     if (!confirm("Annuler ce run ?")) return;
-    fetch("/api/eval/run_cancel/" + runId, { method: "POST" }).catch(function () {});
+    fetch(api("/api/eval/run_cancel/" + runId), { method: "POST" }).catch(function () {});
   };
 
   function loadRunsList() {
-    fetch("/api/eval/runs").then(function (r) { return r.json(); }).then(function (runs) {
+    fetch(api("/api/eval/runs")).then(function (r) { return r.json(); }).then(function (runs) {
       var el = document.getElementById("runs-list");
       if (!runs.length) { el.textContent = "Aucun run pour l'instant."; return; }
       el.innerHTML = runs.map(function (r) {
@@ -438,7 +440,7 @@
   var currentRunId = null;
 
   function loadRunsForReport() {
-    fetch("/api/eval/runs").then(function (r) { return r.json(); }).then(function (runs) {
+    fetch(api("/api/eval/runs")).then(function (r) { return r.json(); }).then(function (runs) {
       var sel = document.getElementById("report-run-select");
       var prev = sel.value;
       sel.innerHTML = '<option value="">— Choisir un run —</option>';
@@ -471,7 +473,7 @@
     var params = ["category=" + encodeURIComponent(cat), "verdict=" + encodeURIComponent(verdict), "difficulty=" + encodeURIComponent(diff)];
     var url = "/api/eval/results/" + runId + "?" + params.join("&");
 
-    fetch(url).then(function (r) { return r.json(); }).then(function (data) {
+    fetch(api(url)).then(function (r) { return r.json(); }).then(function (data) {
       renderSummaryCards(data.summary);
       renderDistributionChart(data.summary.distribution);
       renderResultsTable(data.results);
@@ -508,11 +510,11 @@
   }
 
   function loadTrendChart() {
-    fetch("/api/eval/runs").then(function (r) { return r.json(); }).then(function (runs) {
+    fetch(api("/api/eval/runs")).then(function (r) { return r.json(); }).then(function (runs) {
       var finished = runs.filter(function (r) { return r.phase === "terminé"; }).reverse();
       if (!finished.length) return;
       var promises = finished.map(function (r) {
-        return fetch("/api/eval/results/" + r.run_id).then(function (res) { return res.json(); });
+        return fetch(api("/api/eval/results/" + r.run_id)).then(function (res) { return res.json(); });
       });
       Promise.all(promises).then(function (dataArr) {
         var xs = dataArr.map(function (d, i) { return fmtTs(finished[i].started_at); });
@@ -578,10 +580,10 @@
 
   // Téléchargements
   document.getElementById("dl-md-btn").addEventListener("click", function () {
-    if (currentRunId) window.location.href = "/api/eval/download/" + currentRunId + "?format=md";
+    if (currentRunId) window.location.href = api("/api/eval/download/" + currentRunId + "?format=md");
   });
   document.getElementById("dl-html-btn").addEventListener("click", function () {
-    if (currentRunId) window.location.href = "/api/eval/download/" + currentRunId + "?format=html";
+    if (currentRunId) window.location.href = api("/api/eval/download/" + currentRunId + "?format=html");
   });
 
   // =========================================================================
@@ -591,7 +593,7 @@
   updateDatasetCount();
 
   // Reprendre le polling si une génération était en cours au chargement
-  fetch("/api/eval/gen_status").then(function (r) { return r.json(); }).then(function (status) {
+  fetch(api("/api/eval/gen_status")).then(function (r) { return r.json(); }).then(function (status) {
     if (status.running) {
       document.getElementById("gen-start-btn").disabled = true;
       document.getElementById("gen-cancel-btn").style.display = "inline-block";

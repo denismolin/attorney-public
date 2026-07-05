@@ -1,3 +1,5 @@
+const _root = (window.APP_ROOT || "").replace(/\/$/, ""); function api(path) { return _root + path; }
+
 // Agent Conseil — stratégie contradictoire, déléguant aux agents Chat & Synthèse.
 (function () {
   const form = document.getElementById("advform");
@@ -50,7 +52,7 @@
     if (!provider || !advModel) return;
     advModel.innerHTML = '<option value="">Chargement…</option>';
     advModel.disabled = true;
-    fetch("/api/chat/models/" + encodeURIComponent(provider))
+    fetch(api("/api/chat/models/" + encodeURIComponent(provider)))
       .then((r) => r.json())
       .then((data) => {
         advModel.innerHTML = "";
@@ -254,7 +256,7 @@
       const expandExtra = advExpandExtra ? (parseInt(advExpandExtra.value, 10) || 6) : 6;
       const effort = advEffort ? (advEffort.value || null) : null;
 
-      const resp = await fetch("/api/advisor/stream", {
+      const resp = await fetch(api("/api/advisor/stream"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

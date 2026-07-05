@@ -13,6 +13,7 @@ Routes :
 from __future__ import annotations
 
 import functools
+import hashlib
 import os
 import secrets
 from pathlib import Path
@@ -43,7 +44,7 @@ import eval_state
 import graph_state
 import indexer
 import state
-from config import GENERATED_DIR, UPLOADS_DIR, cfg
+from config import GENERATED_DIR, SOURCE_DIR, UPLOADS_DIR, cfg
 from parsing.cleaner import clean_body
 from parsing.eml_parser import parse_eml
 from rag.index import heartbeat_ok
@@ -56,6 +57,12 @@ app = Flask(__name__)
 # Archives de migration volumineuses (embeddings) → plafond d'upload généreux (2 Go).
 app.config["MAX_CONTENT_LENGTH"] = 2 * 1024 * 1024 * 1024
 app.config["SECRET_KEY"] = os.environ.get("FLASK_SECRET_KEY") or secrets.token_hex(32)
+app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
+_STATIC_VERSION = str(int(os.environ.get("BUILD_TIME", __import__("time").time())))
+
+@app.context_processor
+def inject_static_version():
+    return {"sv": _STATIC_VERSION}
 if not os.environ.get("FLASK_SECRET_KEY"):
     print("[auth] FLASK_SECRET_KEY absente : clé de session éphémère générée "
           "(les connexions ne survivront pas à un redémarrage).")
@@ -540,7 +547,7 @@ def admin_page():
 
 
 _UPLOAD_ALLOWED = {".eml"}
-_UPLOAD_MAX_BYTES = 20 * 1024 * 1024  # 20 Mo par fichier
+_UPLOAD_MAX_BYTES = 200 * 1024 * 1024  # 200 Mo par fichier
 
 
 @app.route("/api/upload", methods=["POST"])
@@ -558,20 +565,39 @@ def api_upload():
     accepted: list[str] = []
     rejected: list[dict] = []
 
+    # Build hash index of every .eml already present anywhere under SOURCE_DIR
+    existing_hashes: set[str] = set()
+    for existing in SOURCE_DIR.rglob("*.eml"):
+        try:
+            existing_hashes.add(hashlib.sha256(existing.read_bytes()).hexdigest())
+        except OSError:
+            pass
+    # Also track hashes of files accepted within this batch (dedup within the upload itself)
+    batch_hashes: set[str] = set()
+
     for f in files:
         name = f.filename or ""
         suffix = Path(name).suffix.lower()
         if suffix not in _UPLOAD_ALLOWED:
             rejected.append({"name": name, "reason": f"Extension {suffix!r} non supportée (attendu : .eml)"})
             continue
-        if f.content_length and f.content_length > _UPLOAD_MAX_BYTES:
-            rejected.append({"name": name, "reason": "Fichier trop volumineux (max 20 Mo)"})
+        try:
+            data = f.read(_UPLOAD_MAX_BYTES + 1)
+            if len(data) > _UPLOAD_MAX_BYTES:
+                rejected.append({"name": name, "reason": "Fichier trop volumineux (max 200 Mo)"})
+                continue
+            digest = hashlib.sha256(data).hexdigest()
+            if digest in existing_hashes or digest in batch_hashes:
+                rejected.append({"name": name, "reason": "Fichier déjà présent (doublon ignoré)"})
+                continue
+            batch_hashes.add(digest)
+        except Exception as exc:
+            rejected.append({"name": name, "reason": f"Erreur de lecture : {exc}"})
             continue
         # Nom de fichier sûr
         safe_name = Path(name).name
         safe_name = "".join(c if c.isalnum() or c in "._- " else "_" for c in safe_name)
         dest = UPLOADS_DIR / safe_name
-        # Si le fichier existe déjà, on ajoute un suffixe numérique
         if dest.exists():
             base, ext = dest.stem, dest.suffix
             for n in range(1, 999):
@@ -580,10 +606,6 @@ def api_upload():
                     dest = candidate
                     break
         try:
-            data = f.read(_UPLOAD_MAX_BYTES + 1)
-            if len(data) > _UPLOAD_MAX_BYTES:
-                rejected.append({"name": name, "reason": "Fichier trop volumineux (max 20 Mo)"})
-                continue
             dest.write_bytes(data)
             accepted.append(dest.name)
         except Exception as exc:

@@ -286,5 +286,5 @@
   // Passe les providers disponibles au JS
   window.EVAL_PROVIDERS = {{ available_providers | tojson }};
 </script>
-<script src="{{ url_for('static', filename='eval.js') }}"></script>
+<script src="{{ url_for('static', filename='eval.js') }}?v={{ sv }}"></script>
 {% endblock %}

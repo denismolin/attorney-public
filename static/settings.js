@@ -1,3 +1,5 @@
+const _root = (window.APP_ROOT || "").replace(/\/$/, ""); function api(path) { return _root + path; }
+
 // Réglages : enregistre providers/modèles/clés et teste les providers.
 (function () {
   const savebtn = document.getElementById("savebtn");
@@ -31,7 +33,7 @@
       savemsg.textContent = "Enregistrement…";
       savemsg.className = "muted";
       try {
-        const resp = await fetch("/api/settings", {
+        const resp = await fetch(api("/api/settings"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(collect()),
@@ -46,7 +48,7 @@
           // Vide les champs clé (déjà persistés) et rafraîchit les placeholders.
           ["openai", "anthropic", "mistral", "vllm"].forEach((prov) => {
             const el = document.getElementById("key_" + prov);
-            const k = (data.settings && data.settings.keys && data.settings.keys[prov]) || {};
+            const k = (data.settings && data.settings.key_status && data.settings.key_status[prov]) || {};
             if (el) {
               el.value = "";
               el.placeholder = k.configured
@@ -71,7 +73,7 @@
       if (out) { out.textContent = " test…"; out.className = "test-result muted"; }
       btn.disabled = true;
       try {
-        const resp = await fetch("/api/settings/test", {
+        const resp = await fetch(api("/api/settings/test"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ provider }),

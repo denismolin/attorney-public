@@ -1,3 +1,5 @@
+const _root = (window.APP_ROOT || "").replace(/\/$/, ""); function api(path) { return _root + path; }
+
 // Chatbot Synthèse — narratif sourcé sur l'historique complet.
 (function () {
   const form = document.getElementById("synthform");
@@ -48,7 +50,7 @@
     if (!provider || !synthModel) return;
     synthModel.innerHTML = '<option value="">Chargement…</option>';
     synthModel.disabled = true;
-    fetch("/api/chat/models/" + encodeURIComponent(provider))
+    fetch(api("/api/chat/models/" + encodeURIComponent(provider)))
       .then((r) => r.json())
       .then((data) => {
         synthModel.innerHTML = "";
@@ -240,7 +242,7 @@
       const topK = synthTopK ? (parseInt(synthTopK.value, 10) || 25) : 25;
       const expandExtra = synthExpandExtra ? (parseInt(synthExpandExtra.value, 10) || 6) : 6;
 
-      const resp = await fetch("/api/synthesis/stream", {
+      const resp = await fetch(api("/api/synthesis/stream"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

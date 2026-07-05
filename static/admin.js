@@ -1,3 +1,7 @@
+// Base path — injected by the template as window.APP_ROOT (e.g. "/attorney")
+const _root = (window.APP_ROOT || "").replace(/\/$/, "");
+function api(path) { return _root + path; }
+
 // ─── Upload de fichiers ──────────────────────────────────────────────────────
 function handleDrop(event) {
   event.preventDefault();
@@ -35,35 +39,85 @@ function handleDrop(event) {
     });
   }
 
-  window.uploadFiles = async function (files) {
+  const uploadProgress = document.getElementById("upload-progress");
+  const uploadBar = document.getElementById("upload-bar");
+  const uploadProgressText = document.getElementById("upload-progress-text");
+
+  function fmtDuration(sec) {
+    sec = Math.max(0, Math.round(sec));
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return m > 0 ? `${m} min ${String(s).padStart(2, "0")} s` : `${s} s`;
+  }
+
+  window.uploadFiles = function (files) {
     if (!files.length) return;
-    uploadResult.style.display = "block";
-    uploadResult.innerHTML = `<span class="muted">Envoi de ${files.length} fichier(s)…</span>`;
+    uploadResult.style.display = "none";
+    uploadProgress.style.display = "block";
+    uploadBar.style.width = "0%";
+    const startTime = Date.now();
+    uploadProgressText.textContent = `Envoi de ${files.length} fichier(s)… 0 % — écoulé 0 s`;
 
     const form = new FormData();
     files.forEach((f) => form.append("files", f));
-    try {
-      const resp = await fetch("/api/upload", { method: "POST", body: form });
-      const data = await resp.json();
-      let html = "";
-      if (data.accepted && data.accepted.length) {
-        html += `<span class="ok">✓ ${data.accepted.length} fichier(s) accepté(s) :</span><ul style="margin:0.2rem 0 0.4rem 1rem;">`;
-        data.accepted.forEach((n) => { html += `<li><code>${escapeHtml(n)}</code></li>`; });
-        html += "</ul>";
-      }
-      if (data.rejected && data.rejected.length) {
-        html += `<span class="ko">✗ ${data.rejected.length} refusé(s) :</span><ul style="margin:0.2rem 0 0 1rem;">`;
-        data.rejected.forEach((r) => { html += `<li><code>${escapeHtml(r.name)}</code> — ${escapeHtml(r.reason)}</li>`; });
-        html += "</ul>";
-      }
-      if (data.error && !html) html = `<span class="ko">${escapeHtml(data.error)}</span>`;
-      if (data.accepted && data.accepted.length) {
-        html += `<p class="muted" style="margin-top:0.4rem;">Lancez l'indexation pour les intégrer.</p>`;
-      }
-      uploadResult.innerHTML = html;
-    } catch (err) {
-      uploadResult.innerHTML = `<span class="ko">Erreur réseau : ${escapeHtml(String(err))}</span>`;
-    }
+
+    return new Promise((resolve) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", api("/api/upload"));
+
+      xhr.upload.addEventListener("progress", (e) => {
+        if (!e.lengthComputable) return;
+        const pct = Math.round((e.loaded / e.total) * 100);
+        const elapsed = (Date.now() - startTime) / 1000;
+        uploadBar.style.width = pct + "%";
+        let text = `Envoi de ${files.length} fichier(s)… ${pct} % — écoulé ${fmtDuration(elapsed)}`;
+        if (e.loaded > 0 && e.loaded < e.total) {
+          const rate = e.loaded / elapsed; // octets/s
+          const remaining = (e.total - e.loaded) / rate;
+          if (isFinite(remaining)) text += ` — restant ≈ ${fmtDuration(remaining)}`;
+        }
+        uploadProgressText.textContent = text;
+      });
+
+      xhr.addEventListener("load", () => {
+        uploadProgress.style.display = "none";
+        uploadResult.style.display = "block";
+        let data;
+        try {
+          data = JSON.parse(xhr.responseText);
+        } catch (err) {
+          uploadResult.innerHTML = `<span class="ko">Erreur réseau : ${escapeHtml(String(err))}</span>`;
+          resolve();
+          return;
+        }
+        let html = "";
+        if (data.accepted && data.accepted.length) {
+          html += `<span class="ok">✓ ${data.accepted.length} fichier(s) accepté(s) :</span><ul style="margin:0.2rem 0 0.4rem 1rem;">`;
+          data.accepted.forEach((n) => { html += `<li><code>${escapeHtml(n)}</code></li>`; });
+          html += "</ul>";
+        }
+        if (data.rejected && data.rejected.length) {
+          html += `<span class="ko">✗ ${data.rejected.length} refusé(s) :</span><ul style="margin:0.2rem 0 0 1rem;">`;
+          data.rejected.forEach((r) => { html += `<li><code>${escapeHtml(r.name)}</code> — ${escapeHtml(r.reason)}</li>`; });
+          html += "</ul>";
+        }
+        if (data.error && !html) html = `<span class="ko">${escapeHtml(data.error)}</span>`;
+        if (data.accepted && data.accepted.length) {
+          html += `<p class="muted" style="margin-top:0.4rem;">Lancez l'indexation pour les intégrer.</p>`;
+        }
+        uploadResult.innerHTML = html;
+        resolve();
+      });
+
+      xhr.addEventListener("error", () => {
+        uploadProgress.style.display = "none";
+        uploadResult.style.display = "block";
+        uploadResult.innerHTML = `<span class="ko">Erreur réseau lors de l'envoi.</span>`;
+        resolve();
+      });
+
+      xhr.send(form);
+    });
   };
 
   function escapeHtml(s) {
@@ -99,7 +153,7 @@ function handleDrop(event) {
     if (!provider || !enrichModel) return;
     enrichModel.innerHTML = '<option value="">Chargement…</option>';
     enrichModel.disabled = true;
-    fetch("/api/eval/models/" + encodeURIComponent(provider))
+    fetch(api("/api/eval/models/" + encodeURIComponent(provider)))
       .then((r) => r.json())
       .then((data) => {
         enrichModel.innerHTML = "";
@@ -143,7 +197,7 @@ function handleDrop(event) {
 
   // Charge le statut d'abord, pour savoir si une indexation est en cours,
   // puis initialise les selects avec le bon provider/modèle.
-  fetch("/api/index/status")
+  fetch(api("/api/index/status"))
     .then((r) => r.json())
     .then((status) => {
       // Priorité : provider/modèle de l'indexation en cours (ou dernière).
@@ -193,7 +247,7 @@ function handleDrop(event) {
 
   async function poll() {
     try {
-      const resp = await fetch("/api/index/status");
+      const resp = await fetch(api("/api/index/status"));
       const status = await resp.json();
       render(status);
       if (!status.running) {
@@ -214,7 +268,7 @@ function handleDrop(event) {
       const provider = enrichProvider ? enrichProvider.value : null;
       const model = enrichModel ? (enrichModel.value || null) : null;
       const payload = { enrich_provider: provider, enrich_model: model };
-      const resp = await fetch("/api/index/start", {
+      const resp = await fetch(api("/api/index/start"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -252,7 +306,7 @@ function handleDrop(event) {
       const sources = exportSources && exportSources.checked ? "1" : "0";
       showMigrate('<span class="muted">Préparation de l\'archive… (le téléchargement démarre dès qu\'elle est prête, cela peut prendre un moment)</span>');
       // Téléchargement direct via navigation : le serveur renvoie le .zip en pièce jointe.
-      window.location.href = "/api/migrate/export?sources=" + sources;
+      window.location.href = api("/api/migrate/export?sources=") + sources;
       setTimeout(() => showMigrate('<span class="muted">Si rien ne se télécharge, vérifiez que ChromaDB est joignable et qu\'aucune indexation n\'est en cours.</span>'), 4000);
     });
   }
@@ -270,7 +324,7 @@ function handleDrop(event) {
       const form = new FormData();
       form.append("file", file);
       try {
-        const resp = await fetch("/api/migrate/import", { method: "POST", body: form });
+        const resp = await fetch(api("/api/migrate/import"), { method: "POST", body: form });
         const data = await resp.json();
         if (!resp.ok) {
           showMigrate('<span class="ko">Erreur : ' + escapeHtmlMig(data.error || resp.status) + "</span>");
@@ -305,7 +359,7 @@ function handleDrop(event) {
     resetmsg.style.display = "block";
     resetmsg.textContent = "Réinitialisation en cours…";
     try {
-      const resp = await fetch("/api/index/reset", { method: "POST" });
+      const resp = await fetch(api("/api/index/reset"), { method: "POST" });
       const data = await resp.json();
       if (!resp.ok) {
         resetmsg.textContent = "Erreur : " + (data.error || resp.status);

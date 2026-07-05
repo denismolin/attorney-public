@@ -36,6 +36,10 @@
       <button type="button" class="btn-secondary btn-sm" id="folder-select-btn">Ou sélectionner un dossier (sous-dossiers inclus)</button>
       <input type="file" id="folder-input" webkitdirectory directory multiple style="display:none">
     </div>
+    <div id="upload-progress" style="margin-top:0.6rem; display:none;">
+      <div class="progressbar"><div id="upload-bar"></div></div>
+      <p class="muted" id="upload-progress-text" style="font-size:0.82rem; margin:0.2rem 0 0;"></p>
+    </div>
     <div id="upload-result" style="margin-top:0.6rem; font-size:0.85rem; display:none;"></div>
   </div>
 
@@ -97,5 +101,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', filename='admin.js') }}"></script>
+<script src="{{ url_for('static', filename='admin.js') }}?v={{ sv }}"></script>
 {% endblock %}
