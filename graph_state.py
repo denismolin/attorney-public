@@ -78,7 +78,6 @@ def init_graph_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_entities_norm ON doc_entities(value_norm);
             CREATE INDEX IF NOT EXISTS idx_edges_src     ON doc_edges(src);
             CREATE INDEX IF NOT EXISTS idx_edges_dst     ON doc_edges(dst);
-            CREATE INDEX IF NOT EXISTS idx_enrichment_content_hash ON doc_enrichment(content_hash);
             """
         )
         # Migration : ajoute les nouvelles colonnes JSON sur une table préexistante.
@@ -86,6 +85,10 @@ def init_graph_db() -> None:
         for col in ("parties_json", "dates_json", "declarations_json", "codes_json", "content_hash"):
             if col not in cols:
                 c.execute(f"ALTER TABLE doc_enrichment ADD COLUMN {col} TEXT")
+
+        # Index sur content_hash : créé après la migration ci-dessus (la colonne
+        # peut ne pas encore exister sur une base préexistante à ce stade).
+        c.execute("CREATE INDEX IF NOT EXISTS idx_enrichment_content_hash ON doc_enrichment(content_hash)")
 
         # Migration : dédupliquer doc_edges si la table existait sans contrainte UNIQUE.
         # On supprime les doublons (même src/dst/rel, on garde l'id le plus petit).
