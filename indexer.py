@@ -90,11 +90,11 @@ def _enrichment_chunk_text(header: str, enr: dict) -> str:
     return "\n".join(parts)
 
 
-def _persist_enrichment(doc_id: str, enr: dict | None) -> None:
+def _persist_enrichment(doc_id: str, enr: dict | None, content_hash: str | None = None) -> None:
     """Stocke l'enrichissement et les entités/codes dans le graphe."""
     if not enr:
         return
-    graph_state.upsert_enrichment(doc_id, enr)
+    graph_state.upsert_enrichment(doc_id, enr, content_hash=content_hash)
     graph_state.add_entities(
         doc_id,
         entities=enr.get("entites") or enr.get("entities") or [],
@@ -498,20 +498,32 @@ def _index_attachments(
             part_doc_ids.append(part_doc_id)
 
         # Enrichissement LLM sur le texte complet (toutes parties) sous le doc_id canonique.
-        # Idempotence : si le texte de la PJ n'a pas changé (hash inchangé) et qu'un
-        # enrichissement existe déjà, on le réutilise au lieu de rappeler le LLM.
+        # Idempotence à deux niveaux :
+        #  1. même doc_id, texte inchangé (ex. réindexation) -> réutilise directement.
+        #  2. doc_id différent mais texte strictement identique (ex. la même PJ jointe
+        #     à un autre email) -> réutilise l'enrichissement d'un autre doc_id plutôt
+        #     que de rappeler le LLM pour un contenu déjà analysé.
+        full_text_hash = _hash(full_text) if not force else None
         cached_enr = graph_state.get_enrichment(att.doc_id) if canonical_unchanged else None
         enrichment_reused = bool(canonical_unchanged and cached_enr)
+        cross_doc_cached_enr = None
+        if not enrichment_reused and not force and full_text_hash:
+            cross_doc_cached_enr = graph_state.get_enrichment_by_content_hash(full_text_hash)
+
         if enrichment_reused:
             state.log(f"  PJ ↷ enrichissement inchangé (skippé) : {att.filename[:60]}")
             enr = cached_enr
+        elif cross_doc_cached_enr:
+            state.log(f"  PJ ↷ enrichissement réutilisé (contenu identique à une autre PJ) : {att.filename[:60]}")
+            enr = cross_doc_cached_enr
+            _persist_enrichment(att.doc_id, enr, content_hash=full_text_hash)
         else:
             text_for_enrich = full_text[:8000]  # garde-fou taille prompt
             state.log(f"  PJ → enrichissement LLM : {att.filename[:60]}")
             _t0_att = time.time()
             enr = enrich.enrich_attachment(att.filename, text_for_enrich, em.subject, enrich_chat, log=state.log)
             _dt_att = time.time() - _t0_att
-            _persist_enrichment(att.doc_id, enr)
+            _persist_enrichment(att.doc_id, enr, content_hash=full_text_hash)
             if enr:
                 state.log(f"  PJ ✓ enrichie en {_dt_att:.1f}s : {att.filename[:50]}")
         if enr:

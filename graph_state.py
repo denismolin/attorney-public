@@ -48,7 +48,10 @@ def init_graph_db() -> None:
                 dates_json        TEXT,             -- liste JSON [{label, date}]
                 declarations_json TEXT,             -- liste JSON [{auteur, contenu}]
                 codes_json        TEXT,             -- dict JSON {cadastre, comptes_iban, fiscaux, dossiers, autres}
-                enriched_at       REAL
+                enriched_at       REAL,
+                content_hash      TEXT              -- hash du texte enrichi : retrouve un enrichissement
+                                                      -- existant pour un même contenu sous un doc_id différent
+                                                      -- (ex. même PJ jointe à deux emails distincts)
             );
 
             CREATE TABLE IF NOT EXISTS doc_entities (
@@ -75,11 +78,12 @@ def init_graph_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_entities_norm ON doc_entities(value_norm);
             CREATE INDEX IF NOT EXISTS idx_edges_src     ON doc_edges(src);
             CREATE INDEX IF NOT EXISTS idx_edges_dst     ON doc_edges(dst);
+            CREATE INDEX IF NOT EXISTS idx_enrichment_content_hash ON doc_enrichment(content_hash);
             """
         )
         # Migration : ajoute les nouvelles colonnes JSON sur une table préexistante.
         cols = {row[1] for row in c.execute("PRAGMA table_info(doc_enrichment)").fetchall()}
-        for col in ("parties_json", "dates_json", "declarations_json", "codes_json"):
+        for col in ("parties_json", "dates_json", "declarations_json", "codes_json", "content_hash"):
             if col not in cols:
                 c.execute(f"ALTER TABLE doc_enrichment ADD COLUMN {col} TEXT")
 
@@ -112,20 +116,21 @@ def _to_json(v) -> str:
     return json.dumps(v, ensure_ascii=False)
 
 
-def upsert_enrichment(doc_id: str, enr: dict) -> None:
+def upsert_enrichment(doc_id: str, enr: dict, content_hash: str | None = None) -> None:
     with _conn() as c:
         c.execute(
             """INSERT INTO doc_enrichment
                  (doc_id, intention, objectif, resume, doc_type,
                   facts_json, parties_json, dates_json, declarations_json, codes_json,
-                  enriched_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                  enriched_at, content_hash)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                ON CONFLICT(doc_id) DO UPDATE SET
                  intention=excluded.intention, objectif=excluded.objectif,
                  resume=excluded.resume, doc_type=excluded.doc_type,
                  facts_json=excluded.facts_json, parties_json=excluded.parties_json,
                  dates_json=excluded.dates_json, declarations_json=excluded.declarations_json,
-                 codes_json=excluded.codes_json, enriched_at=excluded.enriched_at""",
+                 codes_json=excluded.codes_json, enriched_at=excluded.enriched_at,
+                 content_hash=excluded.content_hash""",
             (
                 doc_id,
                 enr.get("intention"),
@@ -138,17 +143,12 @@ def upsert_enrichment(doc_id: str, enr: dict) -> None:
                 _to_json(enr.get("declarations")),
                 _to_json(enr.get("codes")) if isinstance(enr.get("codes"), dict) else "{}",
                 time.time(),
+                content_hash,
             ),
         )
 
 
-def get_enrichment(doc_id: str) -> dict | None:
-    with _conn() as c:
-        row = c.execute(
-            "SELECT * FROM doc_enrichment WHERE doc_id=?", (doc_id,)
-        ).fetchone()
-    if not row:
-        return None
+def _decode_enrichment_row(row: sqlite3.Row) -> dict:
     d = dict(row)
     for field, key, default in (
         ("facts_json",        "facts",            "[]"),
@@ -162,6 +162,33 @@ def get_enrichment(doc_id: str) -> dict | None:
         except (json.JSONDecodeError, TypeError):
             d[key] = [] if default == "[]" else {}
     return d
+
+
+def get_enrichment(doc_id: str) -> dict | None:
+    with _conn() as c:
+        row = c.execute(
+            "SELECT * FROM doc_enrichment WHERE doc_id=?", (doc_id,)
+        ).fetchone()
+    if not row:
+        return None
+    return _decode_enrichment_row(row)
+
+
+def get_enrichment_by_content_hash(content_hash: str) -> dict | None:
+    """Retrouve un enrichissement existant par hash de contenu, indépendamment du
+    doc_id — ex. la même PJ jointe à un autre email n'a pas besoin d'être ré-enrichie
+    par le LLM si son contenu (texte extrait) est strictement identique.
+    """
+    if not content_hash:
+        return None
+    with _conn() as c:
+        row = c.execute(
+            "SELECT * FROM doc_enrichment WHERE content_hash=? ORDER BY enriched_at DESC LIMIT 1",
+            (content_hash,),
+        ).fetchone()
+    if not row:
+        return None
+    return _decode_enrichment_row(row)
 
 
 # --------------------------------------------------------------------------- #
