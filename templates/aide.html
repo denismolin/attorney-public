@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block nav_aide %}active{% endblock %}
+{% block title %}Aide — Assistant juridique v{{ app_version }}{% endblock %}
+
+{% block content %}
+<div class="panel">
+  <h1>Aide</h1>
+  <p class="muted">
+    Cette application aide à consulter et interroger l'ensemble de la correspondance
+    et des pièces jointes d'un dossier de succession. Voici à quoi sert chaque page.
+  </p>
+
+  <h2>Frise</h2>
+  <p>
+    La page d'accueil : liste chronologique de tous les emails indexés, avec un
+    filtre par affaire (succession, dette, pro, autre). Cliquez sur un email pour
+    voir son contenu complet et ses pièces jointes.
+  </p>
+
+  <h2>Graphe</h2>
+  <p>
+    Visualisation des liens entre documents : fils de discussion, pièces jointes,
+    références partagées (IBAN, numéros de dossier…).
+  </p>
+
+  <h2>Chat</h2>
+  <p>
+    Posez une question précise sur le dossier ("Quand la dette a-t-elle été
+    reconnue ?"). Le chatbot cherche dans les documents indexés et répond avec des
+    sources cliquables.
+  </p>
+
+  <h2>Synthèse</h2>
+  <p>
+    Demandez un récit construit sur l'ensemble du dossier (chronologie des faits,
+    position d'une partie…). Chaque affirmation est sourcée par date/correspondant.
+  </p>
+
+  <h2>Conseil</h2>
+  <p>
+    Décrivez un argument ou un scénario de la partie adverse : l'assistant élabore
+    une réponse stratégique en s'appuyant sur le Chat et la Synthèse, et liste les
+    documents utiles.
+  </p>
+
+  <h2>Évaluation</h2>
+  <p>
+    Panneau de test de la qualité du chatbot (génération de questions/réponses de
+    référence, puis notation automatique). Utile pour vérifier que les réponses du
+    Chat restent fiables après un changement de modèle.
+  </p>
+
+  {% if current_user.role == 'admin' %}
+  <h2>Indexation <span class="muted">(admin)</span></h2>
+  <p>
+    Ajoutez de nouveaux emails (.eml) au dossier — par fichier ou par dossier entier
+    — puis lancez l'indexation pour les rendre consultables. Les documents déjà
+    traités et inchangés sont automatiquement ignorés (rapide).
+  </p>
+
+  <h2>Réglages <span class="muted">(admin)</span></h2>
+  <p>
+    Choix des providers IA (OpenAI, Anthropic, Mistral…), des modèles, et saisie des
+    clés API. Appliqué immédiatement, sans redémarrage.
+  </p>
+
+  <h2>Utilisateurs <span class="muted">(admin)</span></h2>
+  <p>
+    Créez des comptes pour les autres membres de l'équipe. Les mots de passe sont
+    générés automatiquement et affichés une seule fois — notez-les immédiatement.
+  </p>
+  {% endif %}
+
+  <h2>Besoin d'aide ?</h2>
+  <p class="muted">
+    Pour toute question sur l'utilisation de l'application, contactez la personne
+    qui vous a créé votre accès.
+  </p>
+</div>
+{% endblock %}

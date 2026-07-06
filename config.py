@@ -15,6 +15,7 @@ from dotenv import load_dotenv
 
 # Racine du projet (ce fichier est à la racine).
 ROOT = Path(__file__).resolve().parent
+APP_VERSION = (ROOT / "VERSION").read_text(encoding="utf-8").strip() if (ROOT / "VERSION").exists() else "0.0.0"
 # data/ se scinde en deux racines indépendantes (configurables via .env) :
 #   - SOURCE_DIR    : entrée fournie par l'utilisateur (emails "mails de */", uploads/).
 #   - GENERATED_DIR : sorties techniques (PJ extraites, texte OCR, SQLite, settings.json).

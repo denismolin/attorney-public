@@ -15,6 +15,7 @@ from __future__ import annotations
 import functools
 import hashlib
 import os
+import re
 import secrets
 from pathlib import Path
 
@@ -44,7 +45,7 @@ import eval_state
 import graph_state
 import indexer
 import state
-from config import GENERATED_DIR, SOURCE_DIR, UPLOADS_DIR, cfg
+from config import APP_VERSION, GENERATED_DIR, SOURCE_DIR, UPLOADS_DIR, cfg
 from parsing.cleaner import clean_body
 from parsing.eml_parser import parse_eml
 from rag.index import heartbeat_ok
@@ -62,7 +63,7 @@ _STATIC_VERSION = str(int(os.environ.get("BUILD_TIME", __import__("time").time()
 
 @app.context_processor
 def inject_static_version():
-    return {"sv": _STATIC_VERSION}
+    return {"sv": _STATIC_VERSION, "app_version": APP_VERSION}
 if not os.environ.get("FLASK_SECRET_KEY"):
     print("[auth] FLASK_SECRET_KEY absente : clé de session éphémère générée "
           "(les connexions ne survivront pas à un redémarrage).")
@@ -506,6 +507,12 @@ def chat_page():
     )
 
 
+@app.route("/aide")
+@login_required
+def aide_page():
+    return render_template("aide.html")
+
+
 @app.route("/api/chat", methods=["POST"])
 @login_required
 def api_chat():
@@ -696,6 +703,17 @@ def eval_page():
     )
 
 
+_KEY_FRAGMENT_RE = re.compile(r"\b[\w-]*\*{2,}[\w-]*\b|\bsk-[\w-]{6,}\b")
+
+
+def _sanitize_provider_error(message: str) -> str:
+    """Retire toute sous-chaîne ressemblant à une clé API (même partiellement
+    masquée) des messages d'erreur remontés par les SDK provider avant de les
+    renvoyer au client — certains SDK (OpenAI) incluent un fragment de la clé
+    dans le message d'erreur 401."""
+    return _KEY_FRAGMENT_RE.sub("[clé masquée]", message)
+
+
 def _fetch_models_for_provider(provider: str) -> tuple[list[str], str | None]:
     """Retourne (liste_modèles, erreur_ou_None) pour un provider donné."""
     provider = provider.lower()
@@ -727,7 +745,7 @@ def _fetch_models_for_provider(provider: str) -> tuple[list[str], str | None]:
                 data = client.models.list().data
                 models = [m.id for m in data]
     except Exception as exc:
-        return [], str(exc)
+        return [], _sanitize_provider_error(str(exc))
     return models, None
 
 

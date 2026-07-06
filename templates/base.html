@@ -3,12 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}Assistant juridique — Succession DUPONT{% endblock %}</title>
+  <title>{% block title %}Assistant juridique v{{ app_version }}{% endblock %}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
   <header class="topbar">
-    <div class="brand">⚖️ Assistant juridique — <strong>Succession DUPONT</strong></div>
+    <div class="brand">⚖️ Assistant juridique <strong>v{{ app_version }}</strong></div>
     <nav>
       <a href="{{ url_for('index') }}" class="{% block nav_timeline %}{% endblock %}">Frise</a>
       <a href="{{ url_for('graph_page') }}" class="{% block nav_graph %}{% endblock %}">Graphe</a>
@@ -23,6 +23,7 @@
       <a href="{{ url_for('settings_page') }}" class="{% block nav_settings %}{% endblock %}">Réglages</a>
       <a href="{{ url_for('admin_users_page') }}" class="{% block nav_admin_users %}{% endblock %}">Utilisateurs</a>
       {% endif %}
+      <a href="{{ url_for('aide_page') }}" class="{% block nav_aide %}{% endblock %}">Aide</a>
     </nav>
     {% if current_user.is_authenticated %}
     <form method="post" action="{{ url_for('logout') }}" style="margin:0;">
