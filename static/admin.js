@@ -295,7 +295,7 @@ function handleDrop(event) {
       });
       const data = await resp.json();
       if (!resp.ok) {
-        alert(data.error || "Impossible de démarrer l'indexation.");
+        App.toast(data.error || "Impossible de démarrer l'indexation.", { kind: "error" });
         startbtn.disabled = false;
         startbtn.textContent = "Lancer l'indexation";
         return;
@@ -303,7 +303,7 @@ function handleDrop(event) {
       if (!pollTimer) pollTimer = setInterval(poll, 1000);
       poll();
     } catch (e) {
-      alert("Erreur réseau : " + e);
+      App.toast("Erreur réseau : " + e, { kind: "error" });
       startbtn.disabled = false;
     }
   });
@@ -373,7 +373,7 @@ function handleDrop(event) {
   }
 
   resetbtn.addEventListener("click", async function () {
-    if (!confirm("Supprimer TOUTES les données indexées (ChromaDB + registre) ?\nIl faudra relancer l'indexation complète.")) return;
+    if (!(await App.confirm("Supprimer toutes les données indexées (vecteurs et registre) de tous les dossiers ? Les emails sources sont conservés ; il faudra relancer une indexation complète.", { okLabel: "Réinitialiser l'index", danger: true }))) return;
     resetbtn.disabled = true;
     startbtn.disabled = true;
     resetmsg.style.display = "block";

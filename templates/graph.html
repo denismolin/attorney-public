@@ -5,28 +5,29 @@
 {% block content %}
 <div class="panel">
   <h1>Graphe de connaissance</h1>
-  <p class="muted">
-    {{ n_nodes }} documents · {{ n_edges }} relations —
-    <span style="color:#2c7fb8">■</span> succession
-    <span style="color:#d95f0e">■</span> dette
-    <span style="color:#756bb1">■</span> pro
-    <span style="color:#969696">■</span> autre
-    &nbsp;|&nbsp;
-    <span style="color:#4477cc">→</span> fil/réponse
-    <span style="color:#aaaaaa">⋯</span> pièce jointe
-    <span style="color:#e67e00">→</span> code partagé
-  </p>
+  <p class="muted">{{ n_nodes }} documents · {{ n_edges }} relations</p>
+  <div class="legend">
+    {% if active_case.is_default %}
+    <span><span class="swatch" style="--c:var(--succession)"></span> succession</span>
+    <span><span class="swatch" style="--c:var(--dette)"></span> dette</span>
+    <span><span class="swatch" style="--c:var(--pro)"></span> pro</span>
+    <span><span class="swatch" style="--c:var(--autre)"></span> autre</span>
+    {% endif %}
+    <span><span style="color:#4477cc">→</span> fil / réponse</span>
+    <span><span style="color:#888">⋯</span> pièce jointe</span>
+    <span><span style="color:#e67e00">→</span> référence partagée</span>
+  </div>
   {% if not n_nodes %}
-    <p class="warn">Aucun document indexé. Lancez l'indexation depuis la page
-      <a href="{{ url_for('admin_page') }}">Indexation</a>.</p>
+    <p class="warn" style="margin-top:var(--sp-3);">Aucun document indexé dans ce dossier.
+      {% if current_user.role == 'admin' %}Lancez l'indexation depuis la page <a href="{{ url_for('admin_page') }}">Indexation</a>.{% endif %}</p>
   {% elif not n_edges %}
-    <p class="warn">Le graphe sera disponible à la fin de l'indexation (construction des arêtes en phase finale).</p>
+    <p class="warn" style="margin-top:var(--sp-3);">Le graphe sera disponible à la fin de l'indexation (les relations sont construites en dernière étape).</p>
   {% endif %}
 </div>
 
-{% if net_html %}
-<div style="border:1px solid #ddd; border-radius:4px; overflow:hidden;">
-  {{ net_html|safe }}
+{% if has_graph %}
+<div class="viz-frame">
+  <iframe src="{{ url_for('graph_embed') }}" title="Graphe des documents du dossier" style="height:720px;" loading="lazy"></iframe>
 </div>
 {% endif %}
 {% endblock %}

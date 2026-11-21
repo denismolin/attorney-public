@@ -32,8 +32,36 @@ def _truncate_for_embed(text: str) -> str:
     return text[:limit]
 
 
-def get_client() -> chromadb.api.ClientAPI:
-    return chromadb.HttpClient(host=cfg.chroma_host, port=cfg.chroma_port)
+def _auth_headers(value: str | None) -> dict | None:
+    """« Nom: valeur » -> {Nom: valeur} ; un jeton seul -> Authorization: Bearer."""
+    value = (value or "").strip()
+    if not value:
+        return None
+    if ":" in value:
+        name, _, val = value.partition(":")
+        if name.strip() and " " not in name.strip():
+            return {name.strip(): val.strip()}
+    return {"Authorization": f"Bearer {value}"}
+
+
+def get_client(
+    host: str | None = None,
+    port: int | None = None,
+    ssl: bool | None = None,
+    auth_header: str | None = None,
+) -> chromadb.api.ClientAPI:
+    """Client Chroma. Sans argument : la base configurée (relue à chaque appel, donc
+    un changement d'adresse dans les réglages s'applique sans redémarrage)."""
+    explicit = host is not None
+    headers = _auth_headers(auth_header if explicit else cfg.chroma_auth_header)
+    kwargs = {
+        "host": host or cfg.chroma_host,
+        "port": int(port or cfg.chroma_port),
+        "ssl": bool(ssl) if explicit else cfg.chroma_ssl,
+    }
+    if headers:
+        kwargs["headers"] = headers
+    return chromadb.HttpClient(**kwargs)
 
 
 def get_collections(client: chromadb.api.ClientAPI | None = None):
@@ -137,6 +165,57 @@ def upsert_chunks(
         )
         total += len(batch)
     return total
+
+
+def tag_untagged_items(case_id: str = "default", batch: int = 500, log=None) -> dict:
+    """Pose la métadonnée `case_id` sur les entrées qui ne l'ont pas (index antérieurs
+    à la gestion multi-dossiers). Métadonnées seules : aucun embedding n'est envoyé ni
+    recalculé. Idempotent et reprenable : les entrées déjà marquées sont ignorées.
+
+    Retourne {collection: {"total": n, "updated": n}}.
+    """
+    client = get_client()
+    docs, chunks = get_collections(client)
+    report: dict = {}
+    for name, col in ((DOCUMENTS_COLLECTION, docs), (CHUNKS_COLLECTION, chunks)):
+        total, updated, offset = col.count(), 0, 0
+        while True:
+            res = col.get(limit=batch, offset=offset, include=["metadatas"])
+            ids = res.get("ids") or []
+            if not ids:
+                break
+            todo_ids, todo_meta = [], []
+            for item_id, meta in zip(ids, res.get("metadatas") or []):
+                meta = dict(meta or {})
+                if "case_id" not in meta:
+                    # Métadonnées complètes renvoyées : correct que `update` fusionne ou remplace.
+                    meta["case_id"] = case_id
+                    todo_ids.append(item_id)
+                    todo_meta.append(meta)
+            if todo_ids:
+                col.update(ids=todo_ids, metadatas=todo_meta)
+                updated += len(todo_ids)
+            offset += len(ids)
+            if log:
+                log(f"{name} : {min(offset, total)}/{total} vérifiés, {updated} marqués")
+        report[name] = {"total": total, "updated": updated}
+    return report
+
+
+def set_email_case(email_id: str, case_id: str) -> int:
+    """Rattache les vecteurs d'un email (et de ses pièces jointes) à un dossier.
+    Métadonnée seule. Retourne le nombre d'entrées modifiées."""
+    docs, chunks = get_collections()
+    n = 0
+    for col in (docs, chunks):
+        res = col.get(where={"email_id": email_id}, include=["metadatas"])
+        ids = res.get("ids") or []
+        if not ids:
+            continue
+        metas = [{**dict(m or {}), "case_id": case_id} for m in res.get("metadatas") or []]
+        col.update(ids=ids, metadatas=metas)
+        n += len(ids)
+    return n
 
 
 def reset_index() -> dict:

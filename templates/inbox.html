@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block nav_inbox %}active{% endblock %}
+{% block title %}À trier — Assistant juridique v{{ app_version }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Emails à trier</h1>
+    <p class="lede">Les emails transférés à la boîte de collecte arrivent ici. Vérifiez le dossier proposé,
+      puis classez : l'email rejoint alors le dossier et devient interrogeable.</p>
+  </div>
+</div>
+
+{% if mailbox_address %}
+<p class="notice info">Pour ajouter un email à un dossier, transférez-le à <strong>{{ mailbox_address }}</strong>.
+  Vous pouvez indiquer le dossier dans l'objet : <code>[dossier: nom du dossier]</code>.</p>
+{% elif not mailbox_enabled %}
+<p class="notice">La boîte de collecte n'est pas activée.
+  {% if current_user.role == 'admin' %}<a href="{{ url_for('settings_page') }}#mailbox-panel">La configurer</a>{% else %}Un administrateur doit la configurer.{% endif %}</p>
+{% endif %}
+
+<div class="tab-bar" role="tablist">
+  <button type="button" class="tab-btn active" role="tab" aria-selected="true" data-view="open">À trier <span id="count-open"></span></button>
+  <button type="button" class="tab-btn" role="tab" aria-selected="false" data-view="done">Traités</button>
+  {% if current_user.role == 'admin' %}
+  <button type="button" class="tab-btn" role="tab" aria-selected="false" data-view="quarantine">Quarantaine <span id="count-quarantine"></span></button>
+  {% endif %}
+</div>
+
+<div id="inbox-list" aria-live="polite"></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  window.INBOX = {
+    isAdmin: {{ (current_user.role == 'admin') | tojson }},
+    cases: {{ inbox_cases | tojson }},
+  };
+</script>
+<script src="{{ url_for('static', filename='inbox.js') }}?v={{ sv }}"></script>
+{% endblock %}

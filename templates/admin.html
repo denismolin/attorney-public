@@ -13,7 +13,7 @@
   <p class="muted">
     L'indexation parse les emails, extrait le texte des pièces jointes « faciles »
     (PDF natif, DOCX, RTF), découpe en chunks et calcule les embeddings dans ChromaDB.
-    Les PDF scannés sont marqués « OCR requis » (traités au jalon 2).
+    Les PDF scannés sont marqués « OCR requis ».
   </p>
 
   {# ─── Zone d'ajout de fichiers ──────────────────────────────────────── #}
@@ -21,7 +21,7 @@
     <h3 style="margin-top:0; font-size:0.95rem;">Ajouter des fichiers à indexer</h3>
     <p class="muted" style="margin-bottom:0.6rem; font-size:0.85rem;">
       Déposez des fichiers <strong>.eml</strong> (emails) ici ou cliquez pour les sélectionner.
-      Ils seront copiés dans <code>data/uploads/</code> puis pris en compte au prochain lancement de l'indexation.
+      Ils seront copiés dans le dossier des emails déposés puis pris en compte au prochain lancement de l'indexation.
     </p>
     <div id="drop-zone"
          style="border:2px dashed #c9c5ba; border-radius:8px; padding:1.5rem; text-align:center;
@@ -77,6 +77,19 @@
   </div>
 </div>
 
+{# ─── Boîte de collecte : état du service de relève ────────────────────── #}
+<div class="panel" id="mailbox-status">
+  <div class="page-head">
+    <h2 style="margin:0;">Boîte de collecte</h2>
+    <a class="btn-secondary btn" href="{{ url_for('settings_page') }}#mailbox-panel">Configurer</a>
+  </div>
+  <ul class="health-list" id="mailbox-health"><li class="muted">Chargement…</li></ul>
+  <details style="margin-top:var(--sp-2);">
+    <summary>Journal du service de relève</summary>
+    <div class="logbox" id="mailbox-log" style="margin-top:var(--sp-2); height:180px;"></div>
+  </details>
+</div>
+
 {# ─── Migration / sauvegarde des bases ─────────────────────────────────── #}
 <div class="panel">
   <h2>Migration / Sauvegarde</h2>
@@ -107,4 +120,5 @@
 
 {% block scripts %}
 <script src="{{ url_for('static', filename='admin.js') }}?v={{ sv }}"></script>
+<script src="{{ url_for('static', filename='mailbox_status.js') }}?v={{ sv }}"></script>
 {% endblock %}

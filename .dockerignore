@@ -1,11 +1,50 @@
-.venv/
-__pycache__/
-*.pyc
-.env
-.git/
-# Confidentiel : RIEN du dossier data/ (emails .eml, pièces jointes, OCR,
-# settings.json avec clés API, sqlite) ne doit entrer dans l'image.
+# Contexte de build de l'image : uniquement le code de l'application.
+# Tout ce qui est listé ici n'entre JAMAIS dans l'image (donc jamais sur un registry).
+
+# --- Secrets -------------------------------------------------------------------
+**/.env
+**/.env.*
+!.env.example
+**/settings.json
+**/*.pem
+**/*.key
+
+# --- Données confidentielles (emails, pièces jointes, OCR, bases, vecteurs) ----
+# RIEN du dossier data/ (emails .eml, pièces jointes, OCR, settings.json avec
+# clés API, sqlite) ne doit entrer dans l'image.
 data/
 chroma-data/
 pg-data/
-*.log
+# Archives de migration : export COMPLET des dossiers (emails + vecteurs).
+backups/
+**/*.zip
+**/*.eml
+**/*.msg
+**/*.sqlite
+**/*.sqlite-*
+**/*.db
+
+# --- Environnement et outils locaux (chemins et noms du poste de développement) -
+.git/
+.gitignore
+.venv/
+**/__pycache__/
+**/*.pyc
+.claude/
+graphify-out/
+.vscode/
+.idea/
+**/*.log
+
+# --- Documentation et scripts de poste : inutiles à l'exécution -----------------
+# CLAUDE.md décrit le contexte d'un dossier ; il n'a rien à faire dans une image.
+CLAUDE.md
+**/*.md
+README_OPTIMISATIONS.txt
+restart-with-backup.*
+monitor_chromadb.sh
+scripts/
+deploy/
+docker-compose*.yml
+Dockerfile
+.dockerignore

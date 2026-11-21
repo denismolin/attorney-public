@@ -2,7 +2,7 @@
 
 Beaucoup d'emails Outlook citent tout l'historique (redondances). On détecte le
 début du bloc cité (en-têtes Outlook FR/EN, lignes `>`, séparateurs) et on retire
-le disclaimer récurrent de Me Dubois. Le template affiche `new` par défaut et
+les mentions de confidentialité récurrentes. Le template affiche `new` par défaut et
 `quoted` repliable.
 """
 from __future__ import annotations
@@ -27,7 +27,7 @@ _QUOTE_HEADERS = [
 ]
 _QUOTE_HEADER_RE = re.compile("|".join(_QUOTE_HEADERS), re.IGNORECASE)
 
-# Disclaimer récurrent de Me Dubois (début de bloc à retirer en pied).
+# Mentions de confidentialité récurrentes (début de bloc à retirer en pied).
 _DISCLAIMER_MARKERS = [
     "La rapidité actuelle des moyens de transmission",
     "CONFIDENTIEL - Les informations contenues",
@@ -87,7 +87,7 @@ def clean_body(text: str) -> dict[str, str]:
 if __name__ == "__main__":
     sample = (
         "Chère Madame,\n\nVoici le point sur le dossier.\n\nBien à vous,\n\n"
-        "De : Me Dubois\nEnvoyé : lundi 12 mai\nÀ : Marie\nObjet : Succession\n\n"
+        "De : Me X\nEnvoyé : lundi 12 mai\nÀ : Y\nObjet : Dossier\n\n"
         "> ancien message cité\n> suite\n"
     )
     res = clean_body(sample)

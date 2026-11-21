@@ -52,18 +52,18 @@ const _root = (window.APP_ROOT || "").replace(/\/$/, ""); function api(path) { r
   document.querySelectorAll(".reset-btn").forEach((btn) => {
     btn.addEventListener("click", async function () {
       const id = btn.getAttribute("data-id");
-      if (!confirm("Réinitialiser le mot de passe de cet utilisateur ?")) return;
+      if (!(await App.confirm("Réinitialiser le mot de passe de cet utilisateur ? Un nouveau mot de passe sera généré ; il devra en choisir un autre à sa prochaine connexion.", { okLabel: "Réinitialiser" }))) return;
       btn.disabled = true;
       try {
         const resp = await fetch(api("/api/users/" + id + "/reset-password"), { method: "POST" });
         const data = await resp.json();
         if (!resp.ok) {
-          alert("Erreur : " + (data.error || resp.status));
+          App.toast(App.errorText(data.error) || ("Erreur " + resp.status), { kind: "error" });
         } else {
           showPassword(data.password);
         }
       } catch (err) {
-        alert("Erreur réseau : " + err);
+        App.toast("Erreur réseau : " + err, { kind: "error" });
       } finally {
         btn.disabled = false;
       }
@@ -73,18 +73,18 @@ const _root = (window.APP_ROOT || "").replace(/\/$/, ""); function api(path) { r
   document.querySelectorAll(".delete-btn").forEach((btn) => {
     btn.addEventListener("click", async function () {
       const id = btn.getAttribute("data-id");
-      if (!confirm("Supprimer cet utilisateur ?")) return;
+      if (!(await App.confirm("Supprimer cet utilisateur ? Son accès est retiré immédiatement.", { okLabel: "Supprimer", danger: true }))) return;
       btn.disabled = true;
       try {
         const resp = await fetch(api("/api/users/" + id + "/delete"), { method: "POST" });
         const data = await resp.json();
         if (!resp.ok) {
-          alert("Erreur : " + (data.error || resp.status));
+          App.toast(App.errorText(data.error) || ("Erreur " + resp.status), { kind: "error" });
         } else {
           window.location.reload();
         }
       } catch (err) {
-        alert("Erreur réseau : " + err);
+        App.toast("Erreur réseau : " + err, { kind: "error" });
       } finally {
         btn.disabled = false;
       }

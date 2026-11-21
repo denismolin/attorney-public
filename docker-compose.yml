@@ -38,6 +38,8 @@ services:
     # Tague l'image au build local (sert de base à un éventuel push registry).
     image: avocat-app:latest
     env_file: .env
+    security_opt:
+      - no-new-privileges:true   # l'application ne peut pas regagner de privilèges
     environment:
       - CHROMA_HOST=chromadb   # surcharge : dans le réseau compose, le host est le nom du service
       - CHROMA_PORT=8000
@@ -55,3 +57,28 @@ services:
           cpus: "2.0"
           memory: 2048M
 
+  # Service de relève de la boîte de collecte (emails transférés par les utilisateurs)
+  # et d'indexation des emails classés. Même image que l'app. Inactif tant que la boîte
+  # n'est pas activée dans Réglages : sans configuration, il ne se connecte à rien.
+  maild:
+    build: .
+    image: avocat-app:latest
+    command: ["python", "-u", "mail_daemon.py"]
+    env_file: .env
+    security_opt:
+      - no-new-privileges:true   # l'application ne peut pas regagner de privilèges
+    environment:
+      - CHROMA_HOST=chromadb
+      - CHROMA_PORT=8000
+    volumes:
+      - ./data/sources:/app/data/sources
+      - ./data/generated:/app/data/generated
+    restart: unless-stopped
+    depends_on:
+      chromadb:
+        condition: service_started
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1024M

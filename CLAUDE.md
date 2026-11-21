@@ -33,6 +33,42 @@ panel. See [README.md](README.md) for the full feature/architecture overview.
   re-read `cfg.*` on every call. [rag/index.py](rag/index.py) is the Chroma client layer.
 - `parsing/`, `viz/`, `eval/`, `templates/`, `static/` — parsing, visualisations,
   evaluation, Jinja views, JS/CSS.
+- [case_state.py](case_state.py) — **cases** (multi-case): registry, active case
+  (a `contextvars` variable set per request and per background thread), per-case prompts
+  and UI texts. The pre-existing data is the `default` case; its prompts are the original
+  constants, returned unchanged. While only `default` exists, no query is filtered.
+- [mail_daemon.py](mail_daemon.py) / [mail_intake.py](mail_intake.py) /
+  [mailbox_state.py](mailbox_state.py) — collection mailbox: IMAP polling (separate
+  `maild` service, never imports `app.py`), intake pipeline (sender allowlist →
+  [parsing/forward.py](parsing/forward.py) unwrap → dedup →
+  [rag/case_classifier.py](rag/case_classifier.py) → triage queue), triage decisions.
+- [db_init.py](db_init.py) — single schema-init entry point for the app, the daemon and
+  migration import.
+
+### Invariants worth knowing before changing things
+
+- **Never change what is hashed or embedded for existing mail** (`parsing/cleaner.py`,
+  `parse_eml`, the chunker, `content_hash = sha1(subject + cleaned text)` in
+  `indexer.py`): it would silently re-embed the whole corpus. A re-index of unchanged
+  data must embed nothing.
+- **The folder decides the case**: `SOURCE_DIR/<folder>/` → `default`,
+  `SOURCE_DIR/cases/<case_id>/<folder>/` → that case. Folders starting with `_`
+  (`_mailbox/`) are never indexed.
+- **Indexing is exclusive across processes** through an SQLite lease
+  (`state.acquire_lease`, heartbeat thread) — the app's workers, the CLI and the daemon
+  all go through `indexer.run()`, which takes it.
+- **Settings**: `cfg.refresh_if_changed()` reloads `settings.json` on each request / daemon
+  cycle. `EXPLICIT_FIELDS` (Chroma address, mailbox) are persisted only when set in the UI,
+  so `.env`/compose values keep applying until then.
+- **Auto-filing needs a deterministic signal** (thread, participant, tag). Content
+  similarity and the LLM only suggest: email text is untrusted input.
+- **No case-specific text in code** (names, amounts, keywords): the image is published.
+  The default case's own prompts, UI examples and `affaire` keywords live in the private
+  file `SOURCE_DIR/_private/default_case.json`, read by [case_private.py](case_private.py);
+  without it the neutral texts in the code apply. Keep `.dockerignore` patterns recursive
+  (`**/`), and never run the container as root (see `docker-entrypoint.sh`).
+- Schema changes are additive (`state.add_column_if_missing`); indexes on added columns
+  are created after the ALTER block.
 
 ### Persistence — what lives where (matters for backup/migration)
 
@@ -74,6 +110,13 @@ python migrate.py import backups/avocat-export-<date>.zip --yes
 
 # One-time: migrate a pre-split data/ (flat) into data/sources + data/generated
 python migrate.py reorganize --yes
+
+# Multi-case: tag an existing index (metadata only) — also done on first case creation
+python migrate.py add-cases
+# Copy vectors to another ChromaDB (e.g. a NAS), no re-embedding
+python migrate.py copy-vectors --to <host>:8000
+# Mailbox daemon (compose service `maild`); --from-dir runs the pipeline on local .eml
+python mail_daemon.py [--once] [--from-dir DIR]
 
 # Publish the app image to your own registry — needs `docker login`
 IMAGE=<your-namespace>/avocat-app ./scripts/docker-push.sh   # or .\scripts\docker-push.ps1 -Image ...

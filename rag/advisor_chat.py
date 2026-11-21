@@ -1,8 +1,8 @@
 """Agent « Conseil d'avocat » — élabore une stratégie contradictoire.
 
-L'utilisateur expose un scénario / dire de la partie adverse (ex. procédure de
-recouvrement de la dette DURAND) ; l'agent produit une réaction stratégique sur
-le fond, au service de la défense (Pierre / Marie MARTIN).
+L'utilisateur expose un scénario / dire de la partie adverse (ex. une procédure de
+recouvrement) ; l'agent produit une réaction stratégique sur le fond, au service
+du client du cabinet.
 
 Particularités vs les deux autres agents :
   - Orchestration par function-calling : l'agent décide lui-même d'interroger le
@@ -36,14 +36,14 @@ from rag.synthesis_chat import (
     synthesize,
 )
 
-ADVISOR_SYSTEM_PROMPT = """Tu es l'AVOCAT CONSEIL de la défense dans une succession \
-franco-italienne (affaire DUPONT / MARTIN / DURAND). Tu défends les intérêts de \
-Pierre et Marie MARTIN face à la partie adverse (Madame DURAND, et le cas \
-échéant Claire DUPONT).
+import case_state  # noqa: E402
+
+ADVISOR_SYSTEM_PROMPT = """Tu es l'AVOCAT CONSEIL du cabinet dans un dossier juridique. \
+Tu défends les intérêts du client du cabinet face à la partie adverse.
 
 L'utilisateur te soumet un SCÉNARIO ou un DIRE de la partie adverse (par exemple sur \
-la procédure de recouvrement de la dette de 98 500 €, la contestation d'un legs, les \
-retraits de fonds…). Ta mission : élaborer une RÉACTION STRATÉGIQUE SUR LE FOND.
+une procédure de recouvrement, la contestation d'un acte, un désaccord sur un \
+partage…). Ta mission : élaborer une RÉACTION STRATÉGIQUE SUR LE FOND.
 
 Méthode :
 - Analyse la thèse adverse : ce qu'elle affirme, sur quoi elle s'appuie, ses présupposés.
@@ -215,7 +215,7 @@ def _run_tool_loop(
     used_any = False
     for _ in range(_MAX_TOOL_TURNS):
         result = chat.complete(
-            ADVISOR_SYSTEM_PROMPT, messages, tools=TOOLS, reasoning_effort=reasoning_effort
+            case_state.prompt_for("advisor", ADVISOR_SYSTEM_PROMPT), messages, tools=TOOLS, reasoning_effort=reasoning_effort
         )
         tool_calls = result.get("tool_calls") or []
         if not tool_calls:
@@ -323,7 +323,7 @@ def advise(
 
     try:
         result = _chat.complete(
-            ADVISOR_SYSTEM_PROMPT, messages, tools=None, reasoning_effort=reasoning_effort
+            case_state.prompt_for("advisor", ADVISOR_SYSTEM_PROMPT), messages, tools=None, reasoning_effort=reasoning_effort
         )
         answer_text = _strip_thinking(result.get("text", ""))
     except Exception as exc:  # noqa: BLE001
@@ -370,7 +370,7 @@ def advise_stream(
     try:
         for _ in range(_MAX_TOOL_TURNS):
             result = _chat.complete(
-                ADVISOR_SYSTEM_PROMPT, messages, tools=TOOLS, reasoning_effort=reasoning_effort
+                case_state.prompt_for("advisor", ADVISOR_SYSTEM_PROMPT), messages, tools=TOOLS, reasoning_effort=reasoning_effort
             )
             tool_calls = result.get("tool_calls") or []
             if not tool_calls:
@@ -427,7 +427,7 @@ def advise_stream(
     full_text = ""
     try:
         for event_type, chunk in _chat.complete_stream(
-            ADVISOR_SYSTEM_PROMPT, messages, reasoning_effort=reasoning_effort
+            case_state.prompt_for("advisor", ADVISOR_SYSTEM_PROMPT), messages, reasoning_effort=reasoning_effort
         ):
             if event_type == "thinking" and chunk:
                 yield sse({"type": "thinking", "text": chunk})

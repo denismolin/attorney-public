@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+{% block title %}Installation — Assistant juridique v{{ app_version }}{% endblock %}
+{% block center_class %}wide{% endblock %}
+{% block content %}
+<ol class="steps" aria-hidden="true">
+  {% for s in steps %}<li data-step-dot="{{ s }}"></li>{% endfor %}
+</ol>
+
+{# ── 1. Compte administrateur ─────────────────────────────────────────── #}
+<section class="panel" data-step="admin" hidden>
+  <h1>Bienvenue</h1>
+  <p class="lede">Quelques étapes pour mettre l'application en service. Seule la première est obligatoire ;
+    les autres peuvent être passées et reprises plus tard dans les réglages.</p>
+  <form class="stack" id="form-admin">
+    <label class="field">Code d'installation
+      <input class="input" name="code" required autocomplete="off" autofocus placeholder="XXXX-XXXX-XXXX"
+             style="font-family:var(--font-mono); letter-spacing:0.08em;">
+      <span class="hint">Affiché au démarrage dans les journaux du serveur
+        (<code>docker compose logs app</code>). Il garantit que vous êtes bien la personne qui installe.</span>
+    </label>
+    <h2>Compte administrateur</h2>
+    <label class="field">Identifiant
+      <input class="input" name="username" required autocomplete="username" value="admin" pattern="[A-Za-z0-9._-]{3,40}">
+    </label>
+    <label class="field">Mot de passe
+      <input class="input" name="password" type="password" required minlength="{{ min_length }}" autocomplete="new-password">
+      <span class="hint">{{ min_length }} caractères au minimum.</span>
+    </label>
+    <label class="field">Confirmer le mot de passe
+      <input class="input" name="confirm" type="password" required minlength="{{ min_length }}" autocomplete="new-password">
+    </label>
+    <p class="notice error" role="alert" hidden></p>
+    <div class="btn-row"><button type="submit">Créer le compte et continuer</button></div>
+  </form>
+</section>
+
+{% if settings %}
+{% set ch = settings.chroma %}
+{% set mb = settings.mailbox %}
+{# ── 2. Base vectorielle ───────────────────────────────────────────────── #}
+<section class="panel" data-step="storage" hidden>
+  <h1>Où stocker l'index ?</h1>
+  <p class="lede">L'index de recherche (base vectorielle ChromaDB) peut tourner sur cette machine ou sur une autre
+    machine du réseau, par exemple un NAS. Les emails et pièces jointes restent sur cette machine.</p>
+  <div class="choice-list">
+    <label class="choice"><input type="radio" name="storage" value="local" checked>
+      <span><strong>Sur cette machine</strong><span>Rien à configurer : la base fournie avec l'application est utilisée.</span></span></label>
+    <label class="choice"><input type="radio" name="storage" value="remote">
+      <span><strong>Sur une autre machine du réseau</strong><span>Un NAS ou un autre poste où ChromaDB est déjà lancé
+        (fichier <code>deploy/docker-compose.nas.yml</code>).</span></span></label>
+  </div>
+  <div id="storage-remote" class="stack" style="margin-top:var(--sp-3);" hidden>
+    <div class="form-grid">
+      <label>Adresse (nom ou IP)<input id="chroma_host" class="input" placeholder="192.168.1.20"></label>
+      <label>Port<input id="chroma_port" class="input" type="number" value="8000" min="1" max="65535"></label>
+      <label>En-tête d'authentification (facultatif)<input id="chroma_auth_header" class="input" type="password" autocomplete="off"></label>
+    </div>
+    <label style="display:flex; gap:0.5rem; align-items:center;"><input type="checkbox" id="chroma_ssl"> Connexion chiffrée (HTTPS)</label>
+    <p class="hint">Sans authentification, n'autorisez le port de la base que depuis cette machine (pare-feu du NAS).</p>
+  </div>
+  <p id="storage-msg" class="hint" role="status" style="margin-top:var(--sp-3);">Base actuelle : {{ ch.host }}:{{ ch.port }}</p>
+  <div class="btn-row">
+    <button type="button" data-next="models" id="storage-next">Tester et continuer</button>
+    <button type="button" class="btn-secondary" data-skip="models">Passer</button>
+  </div>
+</section>
+
+{# ── 3. Modèles ────────────────────────────────────────────────────────── #}
+<section class="panel" data-step="models" hidden>
+  <h1>Quels modèles utiliser ?</h1>
+  <p class="lede">L'application fait appel à un modèle de langage pour répondre et à un modèle d'embedding pour la
+    recherche. Renseignez au moins un service. Les clés restent sur cette machine.</p>
+  <div class="form-grid">
+    {% for prov, label in [("openai", "Clé OpenAI"), ("mistral", "Clé Mistral"), ("anthropic", "Clé Anthropic")] %}
+    <label>{{ label }}
+      <input type="password" id="key_{{ prov }}" class="input" autocomplete="off"
+             placeholder="{% if settings.key_status[prov].configured %}configurée ({{ settings.key_status[prov].hint }}){% else %}non configurée{% endif %}">
+    </label>
+    {% endfor %}
+    <label>Serveur de modèles local (facultatif)
+      <input id="vllm_base_url" class="input" value="{{ settings.vllm_base_url }}" placeholder="http://192.168.1.30:8000/v1">
+      <span class="hint">Serveur compatible OpenAI (vLLM, Ollama…) sur une machine du réseau dotée d'une carte graphique.</span>
+    </label>
+  </div>
+  <h2>Répartition</h2>
+  <div class="form-grid">
+    <label>Réponses (chat)
+      <select id="chat_provider" class="input">
+        {% for p in ["openai", "mistral", "anthropic", "vllm"] %}<option value="{{ p }}"{% if settings.chat_provider == p %} selected{% endif %}>{{ p }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Modèle de chat
+      <input id="chat_model" class="input" list="chat-models" value="{{ settings.chat_model }}">
+      <datalist id="chat-models"></datalist>
+    </label>
+    <label>Recherche (embedding)
+      <select id="embed_provider" class="input"{% if has_vectors %} disabled{% endif %}>
+        {% for p in ["openai", "mistral", "vllm"] %}<option value="{{ p }}"{% if settings.embed_provider == p %} selected{% endif %}>{{ p }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Modèle d'embedding
+      <input id="embed_model" class="input" value="{{ settings.embed_model }}"{% if has_vectors %} disabled{% endif %}>
+    </label>
+  </div>
+  {% if has_vectors %}
+  <p class="notice">Un index existe déjà : le modèle d'embedding est verrouillé. Les vecteurs ne sont valables
+    qu'avec le modèle qui les a produits ; le changer imposerait de tout réindexer.</p>
+  {% else %}
+  <p class="hint">Anthropic ne fournit pas d'embedding : choisissez OpenAI, Mistral ou un serveur local pour la recherche.
+    Ce choix est durable : en changer plus tard impose de réindexer.</p>
+  {% endif %}
+  <p id="models-msg" class="hint" role="status"></p>
+  <div class="btn-row">
+    <button type="button" id="models-next">Enregistrer et tester</button>
+    <button type="button" class="btn-secondary" data-skip="mailbox">Passer</button>
+  </div>
+</section>
+
+{# ── 4. Boîte de collecte ──────────────────────────────────────────────── #}
+<section class="panel" data-step="mailbox" hidden>
+  <h1>Boîte de collecte</h1>
+  <p class="lede">Facultatif. Une adresse email à laquelle les utilisateurs transfèrent les messages à ajouter aux
+    dossiers. L'application la relève et propose un dossier pour chaque email.</p>
+  <div class="form-grid">
+    <label>Serveur IMAP<input id="imap_host" class="input" value="{{ mb.imap_host }}" placeholder="imap.gmail.com"></label>
+    <label>Port<input id="imap_port" class="input" type="number" value="{{ mb.imap_port }}"></label>
+    <label>Adresse de la boîte<input id="imap_user" class="input" value="{{ mb.imap_user }}" placeholder="dossiers@cabinet.fr" autocomplete="off"></label>
+    <label>Mot de passe
+      <input id="imap_password" class="input" type="password" autocomplete="new-password">
+      <span class="hint">Gmail : un « mot de passe d'application ».</span>
+    </label>
+  </div>
+  <label class="field" style="margin-top:var(--sp-3);">Qui peut transférer des emails
+    <textarea id="mailbox_allowed_senders" class="input" rows="2" placeholder="@cabinet.fr">{{ mb.mailbox_allowed_senders }}</textarea>
+    <span class="hint">Adresses ou domaines, séparés par des virgules. Les messages d'autres expéditeurs vont en quarantaine.</span>
+  </label>
+  <p id="mailbox-msg" class="hint" role="status"></p>
+  <div class="btn-row">
+    <button type="button" id="mailbox-next">Tester et activer</button>
+    <button type="button" class="btn-secondary" data-skip="case">Passer</button>
+  </div>
+</section>
+
+{# ── 5. Premier dossier ────────────────────────────────────────────────── #}
+<section class="panel" data-step="case" hidden>
+  <h1>Votre premier dossier</h1>
+  <p class="lede">Donnez un nom au dossier et décrivez l'affaire en quelques lignes. L'assistant s'appuie sur cette
+    note à chaque question. Vous pourrez créer d'autres dossiers ensuite.</p>
+  <form class="stack" id="form-case">
+    <label class="field">Nom du dossier
+      <input class="input" name="name" required maxlength="80" value="{{ default_case.name }}">
+    </label>
+    <label class="field">Description courte
+      <input class="input" name="description" maxlength="200" value="{{ default_case.description or '' }}">
+    </label>
+    <label class="field">Note de contexte pour l'assistant
+      <textarea class="input" name="context_md" rows="6" placeholder="Qui est notre client, qui sont les parties adverses, quels sont les points en litige, les dates et montants clés…">{{ default_case.context_md or '' }}</textarea>
+    </label>
+    <div class="btn-row">
+      <button type="submit">Terminer l'installation</button>
+      <button type="button" class="btn-secondary" data-skip="done">Passer</button>
+    </div>
+  </form>
+</section>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>window.SETUP = { step: {{ step | tojson }}, steps: {{ steps | list | tojson }} };</script>
+<script src="{{ url_for('static', filename='setup.js') }}?v={{ sv }}"></script>
+{% endblock %}

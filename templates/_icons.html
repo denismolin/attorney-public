@@ -1,0 +1,27 @@
+{# Icônes au trait (24×24, héritent de la couleur du texte). Usage : {{ icon('home') }} #}
+{% macro icon(name) -%}
+<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+{%- if name == 'home' -%}<path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/>
+{%- elif name == 'timeline' -%}<path d="M3 12h18"/><circle cx="7" cy="12" r="2"/><circle cx="16" cy="12" r="2"/><path d="M7 10V5M16 14v5"/>
+{%- elif name == 'graph' -%}<circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="8" r="2.5"/><circle cx="11" cy="18" r="2.5"/><path d="M8.3 6.7l7.3 1M7 8.3l3 7.4M16.6 10l-4.2 6"/>
+{%- elif name == 'synthesis' -%}<path d="M6 3h9l4 4v14H6z"/><path d="M15 3v4h4"/><path d="M9 12h7M9 16h7M9 8h3"/>
+{%- elif name == 'advisor' -%}<path d="M12 3v18"/><path d="M5 7h14"/><path d="M5 7l-3 7a3 3 0 006 0z"/><path d="M19 7l-3 7a3 3 0 006 0z"/><path d="M8 21h8"/>
+{%- elif name == 'chat' -%}<path d="M4 5h16v11H9l-5 4z"/>
+{%- elif name == 'inbox' -%}<path d="M3 13l3-8h12l3 8v6H3z"/><path d="M3 13h5l1 3h6l1-3h5"/>
+{%- elif name == 'cases' -%}<path d="M3 7h7l2 2h9v10H3z"/><path d="M3 7V5h6l2 2"/>
+{%- elif name == 'index' -%}<ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6"/><path d="M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/>
+{%- elif name == 'eval' -%}<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>
+{%- elif name == 'settings' -%}<path d="M4 6h10M18 6h2M4 12h3M11 12h9M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="18" cy="18" r="2"/>
+{%- elif name == 'users' -%}<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.6-3.6 3.2-5.5 6.5-5.5s5.9 1.9 6.5 5.5"/><path d="M16 4.800a3.5 3.5 0 010 6.400M18.5 14.800c1.7.800 2.7 2.5 3 5.2"/>
+{%- elif name == 'help' -%}<circle cx="12" cy="12" r="9"/><path d="M9.5 9.500a2.5 2.5 0 114 2c-.900.7-1.5 1.2-1.5 2.5"/><path d="M12 17.500v.01"/>
+{%- elif name == 'theme' -%}<circle cx="12" cy="12" r="8.5"/><path d="M12 3.500v17a8.5 8.5 0 000-17z" fill="currentColor"/>
+{%- elif name == 'key' -%}<circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M16 7l3 3M14 9l2 2"/>
+{%- elif name == 'logout' -%}<path d="M10 4H5v16h5"/><path d="M14 8l4 4-4 4M18 12H9"/>
+{%- elif name == 'menu' -%}<path d="M4 6h16M4 12h16M4 18h16"/>
+{%- elif name == 'copy' -%}<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 00-1-1H5a1 1 0 00-1 1v10a1 1 0 001 1h3"/>
+{%- elif name == 'trash' -%}<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/>
+{%- elif name == 'scale' -%}<path d="M12 3v18"/><path d="M5 7h14"/><path d="M5 7l-3 7a3 3 0 006 0z"/><path d="M19 7l-3 7a3 3 0 006 0z"/><path d="M8 21h8"/>
+{%- elif name == 'mail' -%}<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/>
+{%- endif -%}
+</svg>
+{%- endmacro %}

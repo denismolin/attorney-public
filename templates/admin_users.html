@@ -10,7 +10,7 @@
     au moment de la création ou d'une réinitialisation — notez-les immédiatement.
   </p>
 
-  <table class="maillist" id="users-table">
+  <div class="table-wrap"><table class="maillist" id="users-table">
     <thead>
       <tr>
         <th>Identifiant</th>
@@ -23,26 +23,26 @@
       {% for u in users %}
       <tr data-id="{{ u.id }}">
         <td>{{ u.username }}</td>
-        <td>{{ u.role }}</td>
-        <td class="muted">{{ u.created_at | int if u.created_at else "" }}</td>
+        <td>{{ 'Administrateur' if u.role == 'admin' else 'Utilisateur' }}{% if u.must_change_password %} <span class="badge neutral">mot de passe à changer</span>{% endif %}</td>
+        <td class="muted">{{ u.created_at | datefr }}</td>
         <td style="display:flex; gap:0.5rem;">
           <button type="button" class="btn-secondary btn-sm reset-btn" data-id="{{ u.id }}">Réinitialiser le mot de passe</button>
-          <button type="button" class="btn-secondary btn-sm delete-btn" data-id="{{ u.id }}">Supprimer</button>
+          <button type="button" class="btn-danger-outline btn-sm delete-btn" data-id="{{ u.id }}">Supprimer</button>
         </td>
       </tr>
       {% endfor %}
     </tbody>
-  </table>
+  </table></div>
 
   <h2 style="margin-top:1.4rem;">Créer un utilisateur</h2>
   <div class="eval-form-grid" style="max-width:520px;">
     <label>Identifiant
-      <input id="new-username" class="eval-select" placeholder="ex. jdupont">
+      <input id="new-username" class="eval-select" placeholder="ex. prenom.nom">
     </label>
     <label>Rôle
       <select id="new-role" class="eval-select">
-        <option value="user" selected>user</option>
-        <option value="admin">admin</option>
+        <option value="user" selected>Utilisateur</option>
+        <option value="admin">Administrateur</option>
       </select>
     </label>
   </div>

@@ -5,10 +5,10 @@ identifier les entités clés, l'affaire probable et les faits déjà établis e
 """
 from __future__ import annotations
 
+import case_state
 from parsing.jsonparse import parse_json_response as _parse_json
 
-_SYSTEM = """Tu es un assistant juridique qui analyse une question sur un dossier de succession
-(affaire DUPONT / MARTIN / DURAND).
+_SYSTEM = """Tu es un assistant juridique qui analyse une question sur un dossier juridique.
 
 À partir de la question et de l'historique de la conversation, retourne UNIQUEMENT un objet JSON :
 {
@@ -27,7 +27,7 @@ Règles :
   avec depends_on si une sous-question nécessite les résultats d'une précédente.
 - contexte_acquis : liste les faits importants déjà affirmés par l'assistant dans l'historique récent.
   Si rien de pertinent, retourne [].
-- entites_cles : noms propres, montants (ex. "98500 €"), dates-clés, identifiants cités dans la question.
+- entites_cles : noms propres, montants (ex. "12000 €"), dates-clés, identifiants cités dans la question.
 - affaire_probable : "null" si impossible à déterminer.
 - Sois concis. N'invente rien.
 """
@@ -53,7 +53,7 @@ def analyse_question(
 
     try:
         resp = chat.complete(
-            system=_SYSTEM,
+            system=case_state.prompt_for("intent", _SYSTEM),
             messages=[{"role": "user", "content": user_content}],
             tools=None,
         )

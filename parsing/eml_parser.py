@@ -26,12 +26,12 @@ from config import ATTACHMENTS_DIR, GENERATED_DIR, SOURCE_DIR
 # Images inline de signature à ignorer en-dessous de cette taille (octets).
 INLINE_IMAGE_MIN_BYTES = 20_000
 
-# Numéro de séquence en tête de nom de fichier : "026 Pièces DURAND.eml" -> 26
+# Numéro de séquence en tête de nom de fichier : "026 Pièces.eml" -> 26
 _SEQ_RE = re.compile(r"^\s*(\d+)")
 
 
 def _slugify_correspondent(folder_name: str) -> str:
-    """'mails de dubois' -> 'dubois'."""
+    """'mails de untel' -> 'untel'."""
     name = folder_name.lower()
     name = re.sub(r"^mails?\s+de\s+", "", name).strip()
     return re.sub(r"\s+", "_", name)
@@ -58,7 +58,7 @@ class Attachment:
 @dataclass
 class Email:
     doc_id: str
-    correspondent: str          # dubois, leroy, lefebvre, renard, bernard, sophie
+    correspondent: str          # nom du dossier d'emails, sans « mails de »
     seq: int                    # numéro de fichier dans le dossier (ordre par correspondant)
     source_path: str
     date: datetime              # UTC
@@ -73,6 +73,32 @@ class Email:
     attachments: list[Attachment] = field(default_factory=list)
     affaire: str = "succession"          # affaire principale (affichage/couleur)
     affaires: list[str] = field(default_factory=list)  # toutes les affaires (filtrage)
+    case_id: str = "default"             # dossier, déduit de l'emplacement du fichier
+    source: str = "folder"               # folder | upload | mailbox
+
+    @property
+    def from_addr(self) -> str:
+        """Adresse seule de l'expéditeur, en minuscules ('' si illisible)."""
+        from email.utils import parseaddr
+        return parseaddr(self.from_ or "")[1].strip().lower()
+
+    @staticmethod
+    def _addrs(values: list[str]) -> str:
+        from email.utils import getaddresses
+        seen: list[str] = []
+        for _name, addr in getaddresses([v for v in values if v]):
+            addr = addr.strip().lower()
+            if "@" in addr and addr not in seen:
+                seen.append(addr)
+        return ",".join(seen)
+
+    @property
+    def to_addrs(self) -> str:
+        return self._addrs(self.to)
+
+    @property
+    def cc_addrs(self) -> str:
+        return self._addrs(self.cc)
 
     @property
     def date_iso(self) -> str:
@@ -127,10 +153,27 @@ def _html_to_text(html: str) -> str:
     return text.strip()
 
 
+def _iter_all_attachments(msg: EmailMessage):
+    """Like iter_attachments() but also recurses into forwarded message/rfc822 parts."""
+    for part in msg.iter_attachments():
+        if part.get_content_type() == "message/rfc822":
+            for sub in part.get_payload():
+                yield from _iter_all_attachments(sub)
+        else:
+            yield part
+    # Also check message/rfc822 parts that aren't flagged as attachments
+    # (some mailers embed forwarded messages as inline, not attached).
+    for part in msg.walk():
+        if part.get_content_type() == "message/rfc822" and part.get_content_disposition() != "attachment":
+            for sub in part.get_payload():
+                yield from _iter_all_attachments(sub)
+
+
 def _extract_attachments(msg: EmailMessage, email_id: str) -> list[Attachment]:
     out: list[Attachment] = []
     dest_dir = ATTACHMENTS_DIR / email_id
-    for part in msg.iter_attachments():
+    seen: set[str] = set()
+    for part in _iter_all_attachments(msg):
         filename = part.get_filename()
         content_type = part.get_content_type()
         disposition = (part.get_content_disposition() or "").lower()
@@ -154,6 +197,9 @@ def _extract_attachments(msg: EmailMessage, email_id: str) -> list[Attachment]:
             filename = f"piece.{ext}"
 
         att_id = _stable_doc_id("att", email_id, filename, str(size))
+        if att_id in seen:
+            continue
+        seen.add(att_id)
         dest_dir.mkdir(parents=True, exist_ok=True)
         # Nom de fichier sûr sur disque (on garde le nom d'origine en métadonnée).
         safe = re.sub(r"[^\w\-. ]", "_", filename)[:120]
@@ -228,20 +274,71 @@ def parse_eml(path: Path, correspondent: str) -> Email:
     )
 
 
+_SKIP_DIRS = {"attachments", "extracted_text"}
+CASES_DIRNAME = "cases"
+DEFAULT_CASE = "default"
+
+
+def _is_source_folder(folder: Path) -> bool:
+    """Dossier d'emails à indexer ? Exclut les dossiers techniques et ceux préfixés
+    par `_` (quarantaine de la boîte mail : rien n'y est indexé avant tri)."""
+    return folder.is_dir() and folder.name not in _SKIP_DIRS and not folder.name.startswith("_")
+
+
+def iter_source_folders(data_dir: Path = SOURCE_DIR):
+    """Énumère (dossier_fichiers, correspondant, case_id).
+
+    - `<data_dir>/<dossier>/` (ex. « mails de <nom> », « uploads ») -> dossier par défaut ;
+    - `<data_dir>/cases/<case_id>/<dossier>/` -> dossier `case_id`.
+    L'emplacement fait foi : c'est lui qui détermine le dossier d'un email.
+    """
+    if not data_dir.exists():
+        return
+    for folder in sorted(p for p in data_dir.iterdir() if _is_source_folder(p)):
+        if folder.name == CASES_DIRNAME:
+            continue
+        yield folder, _slugify_correspondent(folder.name), DEFAULT_CASE
+    cases_root = data_dir / CASES_DIRNAME
+    if cases_root.is_dir():
+        for case_dir in sorted(p for p in cases_root.iterdir() if _is_source_folder(p)):
+            for folder in sorted(p for p in case_dir.iterdir() if _is_source_folder(p)):
+                yield folder, _slugify_correspondent(folder.name), case_dir.name
+
+
+def locate(path: Path, data_dir: Path = SOURCE_DIR) -> tuple[str, str]:
+    """(case_id, correspondant) d'un fichier .eml d'après son emplacement."""
+    path = Path(path)
+    correspondent = _slugify_correspondent(path.parent.name)
+    try:
+        rel = path.resolve().relative_to(data_dir.resolve())
+    except ValueError:
+        return DEFAULT_CASE, correspondent
+    if len(rel.parts) >= 4 and rel.parts[0] == CASES_DIRNAME:
+        return rel.parts[1], correspondent
+    return DEFAULT_CASE, correspondent
+
+
+def parse_located(path: Path, data_dir: Path = SOURCE_DIR) -> Email:
+    """Parse un .eml en renseignant dossier et origine d'après son emplacement."""
+    case_id, correspondent = locate(path, data_dir)
+    em = parse_eml(Path(path), correspondent)
+    em.case_id = case_id
+    em.source = "upload" if Path(path).parent.name == "uploads" else "folder"
+    return em
+
+
 def parse_all(data_dir: Path = SOURCE_DIR) -> list[Email]:
-    """Parcourt les 6 dossiers, déduplique par Message-ID, trie par date réelle."""
+    """Parcourt tous les dossiers d'emails, déduplique par Message-ID, trie par date réelle."""
     emails: list[Email] = []
     seen_message_ids: set[str] = set()
     seen_doc_ids: set[str] = set()
 
-    _SKIP_DIRS = {"attachments", "extracted_text"}
-    for folder in sorted(p for p in data_dir.iterdir() if p.is_dir()):
-        if folder.name in _SKIP_DIRS:
-            continue
-        correspondent = _slugify_correspondent(folder.name)
+    for folder, correspondent, case_id in iter_source_folders(data_dir):
         for eml_path in sorted(folder.glob("*.eml")):
             try:
                 em = parse_eml(eml_path, correspondent)
+                em.case_id = case_id
+                em.source = "upload" if folder.name == "uploads" else "folder"
             except Exception as exc:  # pragma: no cover - robustesse
                 print(f"[parse_all] échec {eml_path}: {exc}")
                 continue

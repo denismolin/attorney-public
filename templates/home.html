@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block nav_home %}active{% endblock %}
+{% block title %}Accueil — Assistant juridique v{{ app_version }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>{{ case_name }}</h1>
+    <p class="lede">Bonjour {{ current_user.username }}. Voici l'état du dossier et les accès rapides.</p>
+  </div>
+</div>
+
+{% if setup_pending %}
+<p class="notice info">L'installation n'est pas terminée.
+  <a href="{{ url_for('setup_page') }}">Reprendre l'assistant d'installation</a></p>
+{% endif %}
+
+{% if not stats.n_mails %}
+<div class="panel">
+  <div class="empty-state">
+    <strong>Aucun email indexé</strong>
+    {% if current_user.role == 'admin' %}
+    <p>Déposez des emails puis lancez l'indexation pour alimenter le dossier.</p>
+    <a class="btn" href="{{ url_for('admin_page') }}">Ouvrir l'indexation</a>
+    {% else %}
+    <p>Le dossier n'a pas encore été alimenté. Un administrateur doit lancer l'indexation.</p>
+    {% endif %}
+  </div>
+</div>
+{% else %}
+<div class="stat-grid" style="margin-bottom:var(--sp-4);">
+  <div class="stat"><strong>{{ stats.n_mails }}</strong><span>emails</span></div>
+  <div class="stat"><strong>{{ stats.n_attachments }}</strong><span>pièces jointes</span></div>
+  <div class="stat"><strong>{{ stats.n_threads }}</strong><span>fils de discussion</span></div>
+  <div class="stat"><strong>{{ stats.first_date or '—' }}</strong><span>premier email</span></div>
+  <div class="stat"><strong>{{ stats.last_date or '—' }}</strong><span>dernier email</span></div>
+</div>
+{% endif %}
+
+<div class="grid-2">
+  <div class="panel">
+    <h2>Travailler sur le dossier</h2>
+    <ul class="link-list">
+      <li><a href="{{ url_for('chat_page') }}"><strong>Chat</strong></a><span class="muted">Une question précise, une réponse sourcée.</span></li>
+      <li><a href="{{ url_for('synthesis_page') }}"><strong>Synthèse</strong></a><span class="muted">Un récit construit sur tout le dossier.</span></li>
+      <li><a href="{{ url_for('advisor_page') }}"><strong>Conseil</strong></a><span class="muted">Une stratégie face à un dire adverse.</span></li>
+      <li><a href="{{ url_for('index') }}"><strong>Frise</strong></a><span class="muted">Tous les emails dans l'ordre chronologique.</span></li>
+      <li><a href="{{ url_for('graph_page') }}"><strong>Graphe</strong></a><span class="muted">Les liens entre emails et pièces.</span></li>
+    </ul>
+  </div>
+
+  <div class="panel">
+    <h2>Derniers emails</h2>
+    {% if recent %}
+    <ul class="link-list">
+      {% for e in recent %}
+      <li><span class="when">{{ e.date[:10] }}</span>
+        <a href="{{ url_for('email_detail', doc_id=e.doc_id) }}" title="{{ e.subject }}">{{ e.subject or '(sans objet)' }}</a></li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="muted">Aucun email pour l'instant.</p>
+    {% endif %}
+  </div>
+</div>
+
+{% if mailbox_enabled or inbox_count %}
+<div class="panel">
+  <h2>Ajouter des emails au dossier</h2>
+  {% if mailbox_enabled and mailbox_address %}
+  <p>Transférez l'email à <strong>{{ mailbox_address }}</strong> depuis votre messagerie. Pour désigner le dossier,
+    ajoutez <code>[dossier: {{ active_case.name }}]</code> dans l'objet. L'email apparaît ensuite dans
+    <a href="{{ url_for('inbox_page') }}">À trier</a>, où vous confirmez son dossier.</p>
+  {% endif %}
+  {% if inbox_count %}
+  <p><a class="btn" href="{{ url_for('inbox_page') }}">{{ inbox_count }} email{{ 's' if inbox_count > 1 }} à trier</a></p>
+  {% else %}
+  <p class="muted">Aucun email en attente de tri.</p>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if current_user.role == 'admin' %}
+<div class="panel">
+  <h2>État du système</h2>
+  <ul class="health-list">
+    {% for h in health %}
+    <li><span class="dot {{ h.state }}"></span><span>{{ h.label }}</span><span class="val">{{ h.value }}</span></li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+{% endblock %}

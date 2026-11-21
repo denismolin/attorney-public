@@ -41,6 +41,28 @@ def _thread_id_from_root(root: str) -> str:
     return f"thr_{h}"
 
 
+def assign_thread(em: Email) -> str:
+    """Fil d'un email indexé isolément, à partir du registre (sans relire tout le fonds).
+
+    Même résultat que `build_threads` : un email sans lien forme son propre fil ;
+    sinon il rejoint le fil des emails qu'il cite ou qui le citent. S'il relie
+    plusieurs fils, ils sont fusionnés dans le plus ancien.
+    """
+    import state
+    from parsing.eml_parser import _stable_doc_id
+
+    cited = [r.strip() for r in ([em.in_reply_to] if em.in_reply_to else []) + list(em.references or [])
+             if r and r.strip()]
+    candidates = state.thread_candidates(
+        [_stable_doc_id("eml", r) for r in cited], em.message_id or None, em.doc_id
+    )
+    if not candidates:
+        return _thread_id_from_root(em.message_id or em.doc_id)
+    keep, others = candidates[0], candidates[1:]
+    state.merge_threads(keep, others)
+    return keep
+
+
 def build_threads(emails: list[Email]) -> dict[str, str]:
     """Retourne {doc_id: thread_id} pour tous les emails fournis.
 

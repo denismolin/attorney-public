@@ -3,107 +3,78 @@
 {% block nav_advisor %}active{% endblock %}
 
 {% block content %}
-<div class="panel">
-  <div class="chat-header">
-    <h1>Conseil d'avocat — Stratégie</h1>
-    <div class="chat-actions">
-      <button type="button" id="advcopybtn" class="btn-secondary" title="Copier toute la conversation">📋 Copier</button>
-      <button type="button" id="advclearbtn" class="btn-secondary" title="Effacer la conversation">🗑 Effacer</button>
-    </div>
+<div class="page-head">
+  <div>
+    <h1>Conseil — stratégie</h1>
+    <p class="lede">Exposez un scénario ou un dire de la partie adverse. L'agent conseil élabore une réaction stratégique sur le fond, en s'appuyant sur les agents Chat et Synthèse pour s'informer, puis liste les pièces complémentaires qui renforceraient la défense.</p>
   </div>
-  <p class="muted">
-    Exposez un scénario ou un dire de la partie adverse. L'agent conseil élabore une
-    réaction stratégique sur le fond, en s'appuyant sur les agents Chat et Synthèse pour
-    s'informer, puis liste les pièces complémentaires qui renforceraient la défense.
-  </p>
+  <div class="chat-actions">
+    <button type="button" id="advcopybtn" class="btn-secondary" title="Copier toute la conversation">{{ icon('copy') }} Copier</button>
+    <button type="button" id="advclearbtn" class="btn-secondary" title="Effacer la conversation">{{ icon('trash') }} Effacer</button>
+  </div>
 </div>
 
-<div style="display:flex; gap:1.2rem; align-items:flex-start;">
-
-  {# ─── Colonne gauche : prompts + config ─────────────────────────── #}
-  <div style="flex:0 0 220px; min-width:180px;">
-    <div class="panel" style="margin-bottom:0.8rem;">
-      <h3 style="margin-top:0; font-size:0.95rem;">Scénarios types</h3>
-      <div style="display:flex; flex-direction:column; gap:0.5rem;">
-        <button class="adv-prompt-btn btn-secondary"
-          data-prompt="La partie adverse engage une procédure de recouvrement de la dette de 98 500 € (reconnaissance de dette signée par Mme DURAND le 15 mars 2012) en faveur de la succession. Élabore notre stratégie : faut-il craindre une contestation, quels arguments opposer, quelles pièces mobiliser ?">
-          ⚖️ Recouvrement dette DURAND
-        </button>
-        <button class="adv-prompt-btn btn-secondary"
-          data-prompt="La partie adverse conteste la validité de la reconnaissance de dette de 98 500 € (vice du consentement, absence de cause, prescription). Comment défendre la validité et l'exigibilité de cette créance ?">
-          📜 Contestation de la reconnaissance de dette
-        </button>
-        <button class="adv-prompt-btn btn-secondary"
-          data-prompt="La partie adverse soutient que les fonds retirés des comptes de Jean DUPONT autour de son décès (15 janvier 2024) étaient justifiés. Élabore notre réponse : comment contester ces retraits et en obtenir la réintégration à l'actif successoral ?">
-          💶 Retraits de fonds au décès
-        </button>
-        <button class="adv-prompt-btn btn-secondary"
-          data-prompt="La partie adverse retarde ou refuse la délivrance des legs (usufruit sur les biens de Versailles et d'Italie). Élabore notre stratégie pour obtenir la délivrance des legs et faire valoir nos droits.">
-          🏠 Délivrance des legs (usufruit)
-        </button>
-        <button class="adv-prompt-btn btn-secondary"
-          data-prompt="La partie adverse formule des propositions de partage de la succession qui nous sont défavorables. Analyse leur position et élabore notre contre-stratégie sur le partage.">
-          🤝 Position sur le partage
-        </button>
+<div class="chat-layout">
+  <aside class="chat-aside">
+    <div class="panel">
+      <h2>Scénarios types</h2>
+      <div class="prompt-list">
+        {% for p in advisor_prompts %}
+        <button type="button" class="adv-prompt-btn btn-secondary" data-prompt="{{ p.prompt }}">{{ p.label }}</button>
+        {% endfor %}
       </div>
     </div>
 
     <div class="panel">
-      <h3 style="margin-top:0; font-size:0.95rem;">Configuration LLM</h3>
-      <div style="display:flex; flex-direction:column; gap:0.6rem;">
-        <label style="font-size:0.85rem;">Provider
-          <select id="adv-provider" class="eval-select" style="width:100%; margin-top:0.2rem;">
+      <h2>Modèle et recherche</h2>
+      <div class="stack-sm">
+        <label class="field">Fournisseur
+          <select id="adv-provider" class="eval-select">
             {% for p in available_providers %}
             <option value="{{ p }}"{% if p == chat_provider %} selected{% endif %}>{{ p }}</option>
             {% endfor %}
           </select>
         </label>
-        <label style="font-size:0.85rem;">Modèle
-          <select id="adv-model" class="eval-select" style="width:100%; margin-top:0.2rem;">
+        <label class="field">Modèle
+          <select id="adv-model" class="eval-select">
             <option value="">Chargement…</option>
           </select>
         </label>
-        <label style="font-size:0.85rem;" title="Niveau de raisonnement (modèles compatibles : OpenAI o-series, Claude Opus/Sonnet récents). Ignoré sinon.">
-          Raisonnement
-          <select id="adv-effort" class="eval-select" style="width:100%; margin-top:0.2rem;">
+        <label class="field">Raisonnement
+          <select id="adv-effort" class="eval-select">
             <option value="">Désactivé</option>
             <option value="low">Faible</option>
             <option value="medium">Moyen</option>
             <option value="high">Élevé</option>
           </select>
+          <span class="hint">Pour les modèles compatibles (OpenAI série o, Claude récents). Ignoré sinon.</span>
         </label>
-        <label style="font-size:0.85rem;" title="Nombre de chunks récupérés par recherche vectorielle">
-          Top-K chunks
-          <input type="number" id="adv-top-k" value="25" min="5" max="80" step="5"
-            class="eval-select" style="width:100%; margin-top:0.2rem;">
+        <label class="field">Extraits recherchés
+          <input type="number" id="adv-top-k" value="25" min="5" max="80" step="5" class="eval-select">
+          <span class="hint">Nombre de passages récupérés par la recherche.</span>
         </label>
-        <label style="font-size:0.85rem;" title="Documents voisins ajoutés via le graphe de connaissance (0 = désactivé)">
-          Voisins graphe
-          <input type="number" id="adv-expand-extra" value="6" min="0" max="20" step="1"
-            class="eval-select" style="width:100%; margin-top:0.2rem;">
+        <label class="field">Documents liés
+          <input type="number" id="adv-expand-extra" value="6" min="0" max="20" step="1" class="eval-select">
+          <span class="hint">Voisins ajoutés via le graphe (0 = aucun).</span>
         </label>
       </div>
     </div>
+  </aside>
+
+  <div class="panel chat-main">
+    <div class="chatlog" id="advlog"></div>
+    <form class="chatform" id="advform">
+      <label class="sr-only" for="advquestion">Scénario de la partie adverse</label>
+      <textarea id="advquestion" rows="3" placeholder="Collez ici le dire ou le scénario de la partie adverse…" autocomplete="off"></textarea>
+      <button type="submit" id="advsendbtn">Élaborer la stratégie</button>
+    </form>
+    <p class="hint">Entrée pour envoyer, Maj+Entrée pour aller à la ligne.</p>
   </div>
-
-  {# ─── Colonne droite : conseil ───────────────────────────────────── #}
-  <div style="flex:1; min-width:0;">
-    <div class="panel" style="display:flex; flex-direction:column; min-height:500px;">
-      <div class="chatlog" id="advlog" style="flex:1; min-height:300px;"></div>
-
-      <form class="chatform" id="advform" style="align-items:flex-end;">
-        <textarea id="advquestion" rows="3"
-          placeholder="Collez ici le dire / le scénario de la partie adverse…"
-          style="flex:1; padding:0.6rem 0.8rem; border:1px solid var(--border); border-radius:6px; font-size:0.95rem; resize:vertical; font-family:inherit;"
-          autocomplete="off"></textarea>
-        <button type="submit" id="advsendbtn">Élaborer la stratégie</button>
-      </form>
-    </div>
-  </div>
-
 </div>
 {% endblock %}
 
 {% block scripts %}
+<script>const DEFAULT_CHAT_MODEL = {{ default_chat_model | tojson }};</script>
+<script src="{{ url_for('static', filename='chat-core.js') }}?v={{ sv }}"></script>
 <script src="{{ url_for('static', filename='advisor.js') }}?v={{ sv }}"></script>
 {% endblock %}

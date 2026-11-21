@@ -7,13 +7,13 @@
   <h1>Aide</h1>
   <p class="muted">
     Cette application aide à consulter et interroger l'ensemble de la correspondance
-    et des pièces jointes d'un dossier de succession. Voici à quoi sert chaque page.
+    et des pièces jointes des dossiers du cabinet. Voici à quoi sert chaque page.
   </p>
 
   <h2>Frise</h2>
   <p>
-    La page d'accueil : liste chronologique de tous les emails indexés, avec un
-    filtre par affaire (succession, dette, pro, autre). Cliquez sur un email pour
+    Liste chronologique de tous les emails indexés, avec un
+    filtre par affaire sur le dossier d'origine. Cliquez sur un email pour
     voir son contenu complet et ses pièces jointes.
   </p>
 
@@ -43,14 +43,44 @@
     documents utiles.
   </p>
 
-  <h2>Évaluation</h2>
+  <h2>Dossiers</h2>
+  <p>
+    L'application peut gérer plusieurs dossiers. Le dossier actif se choisit en haut
+    du menu ; toutes les pages (frise, graphe, chat, synthèse, conseil) ne portent
+    que sur lui.
+  </p>
+
+  <h2>À trier</h2>
+  <p>
+    Pour ajouter un email à un dossier, transférez-le depuis votre messagerie
+    {% if mailbox_address %}à <strong>{{ mailbox_address }}</strong>{% else %}à l'adresse de collecte du cabinet{% endif %}.
+    Il apparaît dans <em>À trier</em> avec un dossier proposé et les raisons de cette
+    proposition. Vérifiez, puis cliquez sur <em>Classer</em> : l'email rejoint le
+    dossier et devient interrogeable quelques instants plus tard. Pour désigner le
+    dossier dès l'envoi, ajoutez <code>[dossier: nom du dossier]</code> dans l'objet.
+  </p>
+
+  <h2>Mon compte</h2>
+  <p>
+    Les boutons en bas du menu permettent de passer du thème clair au thème sombre,
+    de changer votre mot de passe et de vous déconnecter.
+  </p>
+
+  {% if current_user.role == 'admin' %}
+  <h2>Dossiers <span class="muted">(admin)</span></h2>
+  <p>
+    Créez un dossier, rédigez sa note de contexte (fournie à l'assistant à chaque
+    question) et déclarez ses participants : leurs adresses servent à proposer le
+    bon dossier pour les emails reçus.
+  </p>
+
+  <h2>Évaluation <span class="muted">(admin)</span></h2>
   <p>
     Panneau de test de la qualité du chatbot (génération de questions/réponses de
     référence, puis notation automatique). Utile pour vérifier que les réponses du
     Chat restent fiables après un changement de modèle.
   </p>
 
-  {% if current_user.role == 'admin' %}
   <h2>Indexation <span class="muted">(admin)</span></h2>
   <p>
     Ajoutez de nouveaux emails (.eml) au dossier — par fichier ou par dossier entier

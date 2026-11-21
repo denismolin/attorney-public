@@ -42,6 +42,19 @@ MANAGED_FIELDS = (
     "openai_api_key", "anthropic_api_key", "mistral_api_key",
     "vllm_base_url", "vllm_chat_base_url", "vllm_embed_base_url", "vllm_api_key",
 )
+# Réglages enregistrés SEULEMENT s'ils ont été saisis dans l'UI. Contrairement aux
+# champs ci-dessus, ils ne sont jamais figés dans settings.json par un enregistrement
+# sans rapport : tant que l'UI n'y touche pas, le .env / docker-compose fait foi
+# (ex. CHROMA_HOST=chromadb posé par docker-compose).
+EXPLICIT_FIELDS = (
+    "chroma_host", "chroma_port", "chroma_ssl", "chroma_auth_header",
+    "imap_enabled", "imap_host", "imap_port", "imap_ssl", "imap_user", "imap_password",
+    "imap_folder", "imap_poll_interval", "imap_processed_action", "imap_processed_folder",
+    "mailbox_address", "mailbox_allowed_senders", "mailbox_require_auth_results",
+    "mailbox_autofile", "mailbox_autofile_threshold", "mailbox_max_bytes",
+)
+# Secrets hors clés de provider : masqués en lecture, jamais renvoyés au navigateur.
+SECRET_FIELDS = ("chroma_auth_header", "imap_password")
 # Clés API : (champ_config, libellé provider) — masquées en lecture.
 KEY_FIELDS = {
     "openai": "openai_api_key",
@@ -60,6 +73,13 @@ def _get(name: str, default: str | None = None) -> str | None:
     if val is not None:
         val = val.strip()
     return val or default
+
+
+def _get_bool(name: str, default: bool = False) -> bool:
+    val = _get(name)
+    if val is None:
+        return default
+    return val.lower() in ("1", "true", "yes", "on", "oui")
 
 
 @dataclass
@@ -99,6 +119,34 @@ class Config:
     # ChromaDB
     chroma_host: str = field(default_factory=lambda: _get("CHROMA_HOST", "localhost"))
     chroma_port: int = field(default_factory=lambda: int(_get("CHROMA_PORT", "8000")))
+    # Base vectorielle sur une autre machine : HTTPS et en-tête d'authentification
+    # (« Nom: valeur », ou un jeton seul envoyé en « Authorization: Bearer … »)
+    # quand un reverse proxy la protège.
+    chroma_ssl: bool = field(default_factory=lambda: _get_bool("CHROMA_SSL"))
+    chroma_auth_header: str | None = field(default_factory=lambda: _get("CHROMA_AUTH_HEADER"))
+
+    # Boîte mail de collecte (IMAP). Désactivée par défaut : sans réglage, rien ne change.
+    imap_enabled: bool = field(default_factory=lambda: _get_bool("IMAP_ENABLED"))
+    imap_host: str = field(default_factory=lambda: _get("IMAP_HOST", "") or "")
+    imap_port: int = field(default_factory=lambda: int(_get("IMAP_PORT", "993")))
+    imap_ssl: bool = field(default_factory=lambda: _get_bool("IMAP_SSL", True))
+    imap_user: str = field(default_factory=lambda: _get("IMAP_USER", "") or "")
+    imap_password: str | None = field(default_factory=lambda: _get("IMAP_PASSWORD"))
+    imap_folder: str = field(default_factory=lambda: _get("IMAP_FOLDER", "INBOX"))
+    imap_poll_interval: int = field(default_factory=lambda: int(_get("IMAP_POLL_INTERVAL", "300")))
+    # Après collecte : "seen" (marquer comme lu) ou "move" (déplacer dans un dossier IMAP).
+    imap_processed_action: str = field(default_factory=lambda: _get("IMAP_PROCESSED_ACTION", "seen"))
+    imap_processed_folder: str = field(default_factory=lambda: _get("IMAP_PROCESSED_FOLDER", "Traites"))
+    # Adresse affichée aux utilisateurs (« transférez vos emails à … »).
+    mailbox_address: str = field(default_factory=lambda: _get("MAILBOX_ADDRESS", "") or "")
+    # Expéditeurs autorisés à transférer (adresses ou @domaines, séparés par virgule/retour ligne).
+    mailbox_allowed_senders: str = field(default_factory=lambda: _get("MAILBOX_ALLOWED_SENDERS", "") or "")
+    # Exiger un résultat SPF/DKIM « pass » posé par le serveur de réception.
+    mailbox_require_auth_results: bool = field(default_factory=lambda: _get_bool("MAILBOX_REQUIRE_AUTH_RESULTS"))
+    # Classement automatique (sans relecture) : désactivé par défaut.
+    mailbox_autofile: bool = field(default_factory=lambda: _get_bool("MAILBOX_AUTOFILE"))
+    mailbox_autofile_threshold: float = field(default_factory=lambda: float(_get("MAILBOX_AUTOFILE_THRESHOLD", "0.85")))
+    mailbox_max_bytes: int = field(default_factory=lambda: int(_get("MAILBOX_MAX_BYTES", str(30 * 1024 * 1024))))
 
     # Flask
     flask_host: str = field(default_factory=lambda: _get("FLASK_HOST", "0.0.0.0"))
@@ -114,6 +162,9 @@ class Config:
     # Pause entre deux batchs d'embedding (throttle anti-crash de TEI).
     embed_batch_delay: float = field(default_factory=lambda: float(_get("EMBED_BATCH_DELAY", "0.3")))
 
+    # mtime de settings.json lors de la dernière lecture (cf. refresh_if_changed).
+    _loaded_mtime: int = field(default=0, init=False, repr=False, compare=False)
+
     def ensure_dirs(self) -> None:
         """Crée les répertoires source/générés s'ils n'existent pas."""
         UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
@@ -123,17 +174,58 @@ class Config:
     # ----------------------------------------------------------------------- #
     # Réglages runtime (menu /settings) — surcouche persistée sur le .env.
     # ----------------------------------------------------------------------- #
-    def load_overrides(self) -> None:
-        """Applique les réglages de GENERATED_DIR/settings.json par-dessus le .env (au démarrage)."""
-        if not SETTINGS_PATH.exists():
-            return
+    @staticmethod
+    def _read_settings_file() -> dict:
         try:
             data = json.loads(SETTINGS_PATH.read_text(encoding="utf-8"))
+            return data if isinstance(data, dict) else {}
         except Exception:
+            return {}
+
+    @staticmethod
+    def _settings_mtime() -> int:
+        try:
+            return SETTINGS_PATH.stat().st_mtime_ns
+        except OSError:
+            return 0
+
+    def _coerce(self, key: str, val):
+        """Ramène une valeur (souvent une chaîne venue du JSON/UI) au type du champ."""
+        current = getattr(self, key, None)
+        try:
+            if isinstance(current, bool):
+                if isinstance(val, str):
+                    return val.strip().lower() in ("1", "true", "yes", "on", "oui")
+                return bool(val)
+            if isinstance(current, int):
+                return int(val)
+            if isinstance(current, float):
+                return float(val)
+        except (TypeError, ValueError):
+            return current
+        return val.strip() if isinstance(val, str) else val
+
+    def load_overrides(self) -> None:
+        """Applique les réglages de GENERATED_DIR/settings.json par-dessus le .env."""
+        self._loaded_mtime = self._settings_mtime()
+        if not self._loaded_mtime:
             return
-        for k in MANAGED_FIELDS:
+        data = self._read_settings_file()
+        for k in MANAGED_FIELDS + EXPLICIT_FIELDS:
             if k in data and data[k] is not None:
-                setattr(self, k, data[k])
+                setattr(self, k, self._coerce(k, data[k]))
+
+    def refresh_if_changed(self) -> bool:
+        """Recharge settings.json s'il a changé sur disque depuis la dernière lecture.
+
+        Chaque processus (les workers gunicorn, le démon mail) a sa propre copie de
+        `cfg` : sans cela, un réglage enregistré via l'UI n'atteindrait que le worker
+        qui a servi la requête. Coût : un `stat` par appel.
+        """
+        if self._settings_mtime() == self._loaded_mtime:
+            return False
+        self.load_overrides()
+        return True
 
     def apply(self, updates: dict) -> None:
         """Met à jour les champs gérés (en place → effet immédiat) et persiste.
@@ -142,12 +234,12 @@ class Config:
         ne doit pas effacer une clé existante). Aligne les base_url vLLM dérivées sur
         `vllm_base_url` quand il est (re)défini sans surcharge explicite.
         """
-        for k in MANAGED_FIELDS:
+        # Repart de l'état sur disque : un autre processus a pu enregistrer entre-temps,
+        # et notre copie en mémoire ne doit pas écraser ses changements.
+        self.refresh_if_changed()
+        for k in MANAGED_FIELDS + EXPLICIT_FIELDS:
             if k in updates and updates[k] is not None:
-                val = updates[k]
-                if isinstance(val, str):
-                    val = val.strip()
-                setattr(self, k, val)
+                setattr(self, k, self._coerce(k, updates[k]))
         # Fallback commun : si on change vllm_base_url sans préciser les variantes,
         # propage (même sémantique que les default_factory du .env).
         if updates.get("vllm_base_url"):
@@ -156,14 +248,33 @@ class Config:
                 self.vllm_chat_base_url = base
             if not updates.get("vllm_embed_base_url"):
                 self.vllm_embed_base_url = base
-        self._save_overrides()
+        self._save_overrides(explicit=[k for k in EXPLICIT_FIELDS
+                                       if k in updates and updates[k] is not None])
 
-    def _save_overrides(self) -> None:
+    def reset_fields(self, keys: list[str]) -> None:
+        """Retire des réglages saisis dans l'UI : la valeur du .env / par défaut reprend."""
+        keys = [k for k in keys if k in EXPLICIT_FIELDS]
+        if not keys:
+            return
+        self.refresh_if_changed()
+        fresh = Config()
+        for k in keys:
+            setattr(self, k, getattr(fresh, k))
+        self._save_overrides(drop=keys)
+
+    def _save_overrides(self, explicit: list[str] | None = None, drop: list[str] | None = None) -> None:
         GENERATED_DIR.mkdir(parents=True, exist_ok=True)
-        snapshot = {k: getattr(self, k) for k in MANAGED_FIELDS}
-        SETTINGS_PATH.write_text(
-            json.dumps(snapshot, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
+        # Conserve les clés inconnues de cette version (fichier écrit par une version
+        # plus récente), puis écriture atomique : jamais de fichier à moitié écrit.
+        snapshot = self._read_settings_file()
+        snapshot.update({k: getattr(self, k) for k in MANAGED_FIELDS})
+        snapshot.update({k: getattr(self, k) for k in (explicit or [])})
+        for k in drop or []:
+            snapshot.pop(k, None)
+        tmp = SETTINGS_PATH.with_name(SETTINGS_PATH.name + f".tmp{os.getpid()}")
+        tmp.write_text(json.dumps(snapshot, ensure_ascii=False, indent=2), encoding="utf-8")
+        os.replace(tmp, SETTINGS_PATH)
+        self._loaded_mtime = self._settings_mtime()
 
     @staticmethod
     def _mask(secret: str | None) -> dict:
@@ -172,6 +283,12 @@ class Config:
             return {"configured": False, "hint": ""}
         tail = secret[-4:] if len(secret) >= 4 else "•" * len(secret)
         return {"configured": True, "hint": "••••" + tail}
+
+    @staticmethod
+    def _mask_opaque(secret: str | None) -> dict:
+        """Masque total (mot de passe) : contrairement à une clé d'API, en révéler la fin
+        n'aide pas à l'identifier et affaiblit un secret court."""
+        return {"configured": bool(secret), "hint": "••••••" if secret else ""}
 
     def public_dict(self) -> dict:
         """Vue sûre de la config gérée (clés masquées) pour l'UI /settings.
@@ -189,7 +306,32 @@ class Config:
             "vllm_base_url": self.vllm_base_url or "",
             "key_status": {prov: self._mask(getattr(self, field_))
                            for prov, field_ in KEY_FIELDS.items()},
+            "chroma": {
+                "host": self.chroma_host, "port": self.chroma_port, "ssl": self.chroma_ssl,
+                "auth_header": self._mask_opaque(self.chroma_auth_header),
+            },
+            "mailbox": self.mailbox_public(),
         }
+
+    def mailbox_public(self) -> dict:
+        return {
+            "imap_enabled": self.imap_enabled, "imap_host": self.imap_host,
+            "imap_port": self.imap_port, "imap_ssl": self.imap_ssl, "imap_user": self.imap_user,
+            "imap_password": self._mask_opaque(self.imap_password), "imap_folder": self.imap_folder,
+            "imap_poll_interval": self.imap_poll_interval,
+            "imap_processed_action": self.imap_processed_action,
+            "imap_processed_folder": self.imap_processed_folder,
+            "mailbox_address": self.mailbox_address,
+            "mailbox_allowed_senders": self.mailbox_allowed_senders,
+            "mailbox_require_auth_results": self.mailbox_require_auth_results,
+            "mailbox_autofile": self.mailbox_autofile,
+            "mailbox_autofile_threshold": self.mailbox_autofile_threshold,
+        }
+
+    def allowed_senders(self) -> list[str]:
+        """Liste normalisée des expéditeurs autorisés (adresses ou « @domaine »)."""
+        import re
+        return [v.strip().lower() for v in re.split(r"[,;\s]+", self.mailbox_allowed_senders or "") if v.strip()]
 
 
 # Instance partagée

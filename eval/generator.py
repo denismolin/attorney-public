@@ -12,6 +12,7 @@ import random
 import threading
 from typing import Any
 
+import case_state
 import eval_state
 from config import Config, cfg
 from parsing.jsonparse import parse_json_response as _parse_json_response
@@ -44,7 +45,7 @@ Règles :
 - notes : brève justification du choix de catégorie/difficulté.
 
 Contraintes impératives :
-- Ne jamais écrire "le Document 1", "le Document 2" ni aucun label numéroté dans la question : ces repères sont internes et inconnus du système RAG. Référence les documents par leur date, leur auteur ou leur sujet (ex : "dans l'email du 14/03/2021 de Renard").
+- Ne jamais écrire "le Document 1", "le Document 2" ni aucun label numéroté dans la question : ces repères sont internes et inconnus du système RAG. Référence les documents par leur date, leur auteur ou leur sujet (ex : "dans l'email du 14/03/2021 du notaire").
 - Ne pas générer une question dont la réponse attendue est uniquement un code alphanumérique brut (code fiscal, numéro de pratique, timestamp ISO) sans contexte explicatif.
 - La question doit être formulée en langage naturel, compréhensible par quelqu'un qui effectue une recherche dans les emails et documents du dossier.
 - La réponse attendue doit être rédigée en prose française, pas uniquement une valeur brute."""
@@ -63,8 +64,9 @@ def start_async(
             return False
         _cancel_flag.clear()
         _thread = threading.Thread(
-            target=_run_safe,
-            args=(provider, model, n_questions, categories, difficulties),
+            target=case_state.run_in_case,
+            args=(case_state.active_case_id(), _run_safe,
+                  provider, model, n_questions, categories, difficulties),
             name="eval-generator",
             daemon=True,
         )
@@ -177,7 +179,9 @@ def _sample_chunks(n: int) -> list[dict]:
         if total == 0:
             return []
         limit = min(n, total)
-        result = col.get(limit=limit, include=["documents", "metadatas"])
+        case_id = case_state.query_filter()
+        result = col.get(limit=limit, include=["documents", "metadatas"],
+                         where={"case_id": case_id} if case_id else None)
         items = []
         ids = result.get("ids", [])
         docs = result.get("documents", [])

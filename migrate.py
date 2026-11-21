@@ -56,7 +56,7 @@ _UPSERT_BATCH = 256    # taille de lot de réinjection Chroma
 _ARC_GENERATED = "data/generated"
 _ARC_SOURCES = "data/sources"
 # Entrées à ne jamais exporter (secrets + résidus).
-_EXCLUDE = {"settings.json", ".env", "index_state.db", "__pycache__"}
+_EXCLUDE = {"settings.json", ".env", ".session_key", "index_state.db", "__pycache__"}
 # Compat : noms de dossiers "générés" dans une archive pré-split (data/ à plat),
 # pour router chaque entrée vers GENERATED_DIR ou SOURCE_DIR à l'import.
 _LEGACY_GENERATED_DIRS = {"attachments", "extracted_text"}
@@ -297,6 +297,74 @@ def _safe_extractall(zf: zipfile.ZipFile, dest: Path) -> None:
     zf.extractall(dest)
 
 
+def backfill_case_metadata(log=None) -> dict:
+    """Prépare un index existant à la gestion multi-dossiers.
+
+    Marque tous les vecteurs sans dossier comme appartenant au dossier par défaut
+    (métadonnée seule, aucun recalcul d'embedding), sous le bail d'indexation pour
+    ne pas croiser une indexation en cours. Sans effet si déjà fait.
+    """
+    import case_state
+    import db_init
+    import state
+    from rag.index import tag_untagged_items
+
+    db_init.ensure_all()
+    if case_state.vectors_tagged():
+        return {"status": "already_done"}
+    owner = state.new_lease_owner()
+    if not state.acquire_lease(state.INDEX_LEASE, owner, kind="backfill"):
+        raise RuntimeError("Une indexation est en cours : réessayez une fois celle-ci terminée.")
+    keeper = state.LeaseKeeper(state.INDEX_LEASE, owner).start()
+    try:
+        report = tag_untagged_items(case_state.DEFAULT, log=lambda m: _log(m, log))
+        # Second passage de contrôle : tout doit être marqué avant de lever le verrou.
+        check = tag_untagged_items(case_state.DEFAULT)
+        remaining = sum(v["updated"] for v in check.values())
+        if remaining:
+            raise RuntimeError(f"{remaining} entrées restaient à marquer : relancez l'opération.")
+        state.set_meta(case_state.BACKFILL_META_KEY, "done")
+    finally:
+        keeper.stop()
+        state.release_lease(state.INDEX_LEASE, owner)
+    _log("✓ Vecteurs existants rattachés au dossier par défaut.", log)
+    return {"status": "done", "collections": report}
+
+
+def copy_vectors(host: str, port: int = 8000, ssl: bool = False, auth_header: str | None = None,
+                 batch: int = 200, log=None) -> dict:
+    """Copie les deux collections (embeddings compris) de la base vectorielle actuelle
+    vers une autre (ex. un NAS), sans recalcul. La source n'est pas modifiée.
+    Vérifie les effectifs à l'arrivée."""
+    from rag.index import get_client, get_collections
+
+    src_docs, src_chunks = get_collections()
+    target = get_client(host=host, port=port, ssl=ssl, auth_header=auth_header)
+    target.heartbeat()
+    dst_docs, dst_chunks = get_collections(target)
+    report = {}
+    for name, src, dst in (("documents", src_docs, dst_docs), ("chunks", src_chunks, dst_chunks)):
+        total, offset = src.count(), 0
+        while True:
+            res = src.get(limit=batch, offset=offset, include=["embeddings", "documents", "metadatas"])
+            ids = res.get("ids") or []
+            if not ids:
+                break
+            embeddings = res.get("embeddings")
+            dst.upsert(
+                ids=ids,
+                embeddings=[list(map(float, e)) for e in embeddings],
+                documents=res.get("documents"),
+                metadatas=[m or None for m in (res.get("metadatas") or [])],
+            )
+            offset += len(ids)
+            _log(f"{name} : {min(offset, total)}/{total} copiés", log)
+        report[name] = {"source": total, "target": dst.count()}
+    report["ok"] = all(v["target"] >= v["source"] for v in report.values())
+    _log("✓ Copie terminée." if report["ok"] else "✗ Effectifs incohérents après copie.", log)
+    return report
+
+
 def import_archive(zip_path: Path | str, assume_yes: bool = False, log=None) -> dict:
     """Restaure une archive de migration. Retourne un résumé.
 
@@ -366,6 +434,11 @@ def import_archive(zip_path: Path | str, assume_yes: bool = False, log=None) -> 
                         target.parent.mkdir(parents=True, exist_ok=True)
                         shutil.copy2(f, target)
                     _log("Fichiers restaurés depuis une archive pré-split (data/ à plat).", log)
+
+            # Le SQLite restauré peut dater d'une version antérieure : on rejoue les
+            # migrations additives pour que l'app tourne sans redémarrage.
+            import db_init
+            db_init.ensure_all()
 
             # 2) Réinjecte les vecteurs Chroma.
             _log("Réinjection des vecteurs ChromaDB…", log)
@@ -459,6 +532,18 @@ def _main(argv: list[str]) -> int:
     p_imp.add_argument("archive", help="Chemin de l'archive .zip à importer.")
     p_imp.add_argument("--yes", action="store_true", help="Ne pas demander de confirmation.")
 
+    sub.add_parser(
+        "add-cases",
+        help="Prépare un index existant à la gestion multi-dossiers (métadonnées seules, sans recalcul).",
+    )
+    p_copy = sub.add_parser(
+        "copy-vectors",
+        help="Copie les vecteurs vers une autre base ChromaDB (ex. NAS), sans recalcul.",
+    )
+    p_copy.add_argument("--to", required=True, metavar="HOTE:PORT", help="Base ChromaDB de destination.")
+    p_copy.add_argument("--ssl", action="store_true", help="Destination en HTTPS.")
+    p_copy.add_argument("--auth-header", default=None, help="En-tête d'authentification de la destination.")
+
     p_reorg = sub.add_parser(
         "reorganize",
         help="Réorganise un data/ existant (à plat) vers SOURCE_DIR/GENERATED_DIR.",
@@ -466,6 +551,16 @@ def _main(argv: list[str]) -> int:
     p_reorg.add_argument("--yes", action="store_true", help="Ne pas demander de confirmation.")
 
     args = parser.parse_args(argv)
+
+    if args.cmd == "add-cases":
+        print(backfill_case_metadata())
+        return 0
+
+    if args.cmd == "copy-vectors":
+        host, _, port = args.to.partition(":")
+        report = copy_vectors(host, int(port or 8000), ssl=args.ssl, auth_header=args.auth_header)
+        print(report)
+        return 0 if report["ok"] else 1
 
     if args.cmd == "export":
         export_archive(dest_dir=args.out, with_sources=not args.no_sources)

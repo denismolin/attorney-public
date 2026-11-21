@@ -1,0 +1,42 @@
+# Base vectorielle ChromaDB seule, à faire tourner sur une AUTRE machine du réseau
+# (NAS QNAP/Synology via Container Station, mini-PC…). L'application reste sur son
+# poste et s'y connecte : Réglages > Base vectorielle (ou l'assistant d'installation).
+#
+#   docker compose -f docker-compose.nas.yml up -d
+#
+# QNAP : Container Station > Applications > Créer, puis coller ce fichier.
+#
+# SÉCURITÉ — à lire avant de démarrer :
+#   ChromaDB n'a pas d'authentification. Elle contient le TEXTE des emails indexés.
+#   1. Remplacez 0.0.0.0 ci-dessous par l'adresse IP du NAS sur le réseau local.
+#   2. Dans le pare-feu du NAS, n'autorisez le port 8000 QUE depuis l'adresse IP du
+#      poste qui fait tourner l'application.
+#   3. N'exposez jamais ce port sur Internet (pas de redirection sur la box).
+#   Pour chiffrer et authentifier, placez un reverse proxy HTTPS devant et
+#   renseignez « Connexion chiffrée » + « En-tête d'authentification » dans les réglages.
+#
+# Déplacer un index existant vers le NAS, sans recalcul :
+#   Réglages > Base vectorielle > « Copier les vecteurs vers cette adresse »,
+#   ou : python migrate.py copy-vectors --to <ip-du-nas>:8000
+volumes:
+  chroma-data:
+
+services:
+  chromadb:
+    image: chromadb/chroma:1.4.4-local
+    volumes:
+      - chroma-data:/data          # QNAP : remplacer par un dossier partagé, ex. /share/Container/chroma:/data
+    environment:
+      - IS_PERSISTENT=TRUE
+      - ANONYMIZED_TELEMETRY=FALSE
+      - CHROMA_QUERY_SIZE_LIMIT=1000
+    ports:
+      - "0.0.0.0:8000:8000"        # <- mettre l'IP locale du NAS à la place de 0.0.0.0
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 3072M            # NAS à 8 Go : laisse de la marge au système
+        reservations:
+          memory: 512M

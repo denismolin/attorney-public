@@ -20,7 +20,9 @@
       if (!pt || !pt.customdata) return;
       const cd = pt.customdata;
       const target = cd.email_id || cd.doc_id;
-      if (target) window.location.href = "/email/" + target;
+      // Préfixe de déploiement (ex. /attorney) : l'app peut être servie sous un sous-chemin.
+      const root = (window.APP_ROOT || "").replace(/\/$/, "");
+      if (target) window.location.href = root + "/email/" + target;
     });
   }
 })();

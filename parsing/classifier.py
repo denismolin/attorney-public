@@ -1,64 +1,77 @@
 """Classement de chaque email par affaire (mots-clés sur sujet + corps).
 
-Affaires : succession (défaut large), dette (reconnaissance de dette DURAND),
-pro (activités professionnelles du défunt / autres dossiers : BANIN…), autre.
+Affaires : succession (défaut large), dette, pro (activités professionnelles /
+autres dossiers), autre.
+
+Les motifs ci-dessous sont génériques. Une installation peut les remplacer par
+les siens (noms de parties, montants…) dans son fichier privé, hors du code :
+cf. case_private (clé "classifier").
 """
 from __future__ import annotations
 
 import re
 
-# Ordre d'évaluation : dette et pro d'abord (plus spécifiques), puis succession.
-_PRO_PATTERNS = [
-    r"\bBANIN\b",
-    r"\bABEILLE\b",
-    r"comptes?\s+sociaux",
-    r"\bINPI\b",
-    r"statuts?\s+constitutifs?",
-    r"fiches?\s+de\s+paie",
-    r"bodacc",
-    r"\bFacture\b",
-]
-_DETTE_PATTERNS = [
-    r"reconnaissance\s+de\s+dette",
-    r"\bdette[s]?\b",
-    r"\bDURAND\b",
-    r"98\s?500",
-    r"prescription",
-]
-_SUCCESSION_PATTERNS = [
-    r"succession",
-    r"\bDUPONT\b",
-    r"partage",
-    r"notaire",
-    r"\blegs\b",
-    r"usufruit",
-    r"assignation",
-    r"h[ée]riti",
-]
+import case_private
 
-_PRO_RE = re.compile("|".join(_PRO_PATTERNS), re.IGNORECASE)
-_DETTE_RE = re.compile("|".join(_DETTE_PATTERNS), re.IGNORECASE)
-_SUCCESSION_RE = re.compile("|".join(_SUCCESSION_PATTERNS), re.IGNORECASE)
+# Ordre d'évaluation : dette et pro d'abord (plus spécifiques), puis succession.
+_DEFAULT_PATTERNS = {
+    "pro": [
+        r"comptes?\s+sociaux",
+        r"\bINPI\b",
+        r"statuts?\s+constitutifs?",
+        r"fiches?\s+de\s+paie",
+        r"bodacc",
+        r"\bFacture\b",
+    ],
+    "dette": [
+        r"reconnaissance\s+de\s+dette",
+        r"\bdette[s]?\b",
+        r"prescription",
+    ],
+    "succession": [
+        r"succession",
+        r"partage",
+        r"notaire",
+        r"\blegs\b",
+        r"usufruit",
+        r"assignation",
+        r"h[ée]riti",
+    ],
+}
+
+_compiled: tuple[tuple, dict] | None = None   # (signature des motifs, regex compilées)
+
+
+def _regexes() -> dict:
+    """Regex par affaire : motifs du fichier privé s'il en fournit, sinon génériques."""
+    global _compiled
+    patterns = dict(_DEFAULT_PATTERNS)
+    patterns.update(case_private.classifier_patterns())
+    sig = tuple((k, tuple(patterns[k])) for k in sorted(patterns))
+    if _compiled is None or _compiled[0] != sig:
+        _compiled = (sig, {k: re.compile("|".join(v), re.IGNORECASE) for k, v in patterns.items()})
+    return _compiled[1]
 
 
 def classify_all(subject: str, body: str = "") -> list[str]:
     """Renvoie TOUTES les affaires détectées (un doc peut couvrir plusieurs volets).
 
     Un même email/PJ peut concerner à la fois la dette ET la succession (ex. un
-    projet de partage qui intègre la créance DURAND). On ne force donc pas un
+    projet de partage qui intègre une créance). On ne force donc pas un
     classement exclusif : on retourne la liste des affaires pertinentes.
     """
     # On pondère le sujet (signal plus fort) en le répétant.
     hay = f"{subject} {subject} {body}"
+    rx = _regexes()
     affaires: list[str] = []
 
-    if _DETTE_RE.search(hay):
+    if rx["dette"].search(hay):
         affaires.append("dette")
-    if _SUCCESSION_RE.search(hay):
+    if rx["succession"].search(hay):
         affaires.append("succession")
     # "pro" n'est ajouté que s'il n'y a pas de signal succession dans le SUJET
     # (évite que tout mail de succession touchant aux biens soit tagué "pro").
-    if _PRO_RE.search(hay) and not _SUCCESSION_RE.search(subject):
+    if rx["pro"].search(hay) and not rx["succession"].search(subject):
         affaires.append("pro")
 
     return affaires or ["autre"]
@@ -79,9 +92,9 @@ def classify(subject: str, body: str = "") -> str:
 
 if __name__ == "__main__":
     cases = [
-        ("Succession DUPONT / MARTIN", "partage et legs"),
-        ("Dossier DUPONT MARTIN _ DURAND - dettes", "reconnaissance de dette 98 500"),
-        ("Dossier BANIN", "comptes sociaux 2022 INPI"),
+        ("Succession — projet de partage", "partage et legs"),
+        ("Dossier dettes", "reconnaissance de dette"),
+        ("Dossier société", "comptes sociaux 2022 INPI"),
         ("test", ""),
     ]
     for subj, body in cases:

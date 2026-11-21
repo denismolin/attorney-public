@@ -22,8 +22,8 @@ _MAX_ATTEMPTS = 5
 _BACKOFF_STEP = 5  # secondes : 5, 10, 15, 20, 25
 
 
-EMAIL_SYSTEM = """Tu es un assistant juridique qui analyse la correspondance d'une \
-succession franco-italienne (affaire DUPONT / MARTIN / DURAND).
+EMAIL_SYSTEM = """Tu es un assistant juridique qui analyse la correspondance d'un \
+dossier juridique.
 À partir de l'email fourni, extrais une analyse structurée.
 Retourne UNIQUEMENT un objet JSON valide, sans texte ni balise markdown autour :
 {
@@ -56,7 +56,7 @@ Règles :
 
 
 ATTACHMENT_SYSTEM = """Tu es un assistant juridique qui analyse une pièce jointe d'un \
-dossier de succession franco-italienne (DUPONT / MARTIN / DURAND).
+dossier juridique.
 À partir du texte du document fourni, extrais une analyse structurée.
 Retourne UNIQUEMENT un objet JSON valide, sans texte ni balise markdown autour :
 {
@@ -144,7 +144,8 @@ def _complete_json(chat, system: str, user: str, log=None) -> dict | None:
 def enrich_email(subject: str, mail_text: str, chat, log=None) -> dict | None:
     """{intention, objectif, faits[], entites[], codes[], resume} ou None."""
     user = f"Objet : {subject}\n\nCorps de l'email :\n{mail_text[:6000]}"
-    return _complete_json(chat, EMAIL_SYSTEM, user, log=log)
+    import case_state
+    return _complete_json(chat, case_state.prompt_for("enrich_email", EMAIL_SYSTEM), user, log=log)
 
 
 def enrich_attachment(filename: str, text: str, parent_subject: str, chat, log=None) -> dict | None:
@@ -154,7 +155,8 @@ def enrich_attachment(filename: str, text: str, parent_subject: str, chat, log=N
         f"Transmis par l'email : {parent_subject}\n\n"
         f"Texte du document :\n{text[:6000]}"
     )
-    return _complete_json(chat, ATTACHMENT_SYSTEM, user, log=log)
+    import case_state
+    return _complete_json(chat, case_state.prompt_for("enrich_attachment", ATTACHMENT_SYSTEM), user, log=log)
 
 
 def infer_links(subject: str, att_briefs: list[dict], chat, log=None) -> dict | None:

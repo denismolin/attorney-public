@@ -18,10 +18,11 @@ from rag.chat import (
     _update_session_ctx,
 )
 from rag.providers import Chat, get_chat
+import case_state
 from rag.retrieve import Hit, format_context, search
 
 SYNTHESIS_SYSTEM_PROMPT = """Tu es un juriste assistant qui analyse la correspondance \
-complète d'une succession franco-italienne (DUPONT / MARTIN / DURAND).
+complète d'un dossier juridique.
 
 Ta mission est de construire des NARRATIFS SOURCÉS : synthèses, chronologies, \
 analyses contradictoires, points de contentieux — à partir des documents fournis.
@@ -64,8 +65,8 @@ def _rewrite_query(question: str) -> str:
 
     Retire les mots de remplissage (verbes d'instruction, stopwords) pour que
     l'embedding matche sur le contenu des documents et non sur la forme de la question.
-    Ex: "Fais moi une synthèse des estimations de la maison d'Italie"
-     -> "estimations maison Italie"
+    Ex: "Fais moi une synthèse des estimations du bien immobilier"
+     -> "estimations bien immobilier"
     """
     # Garde uniquement les mots de 4+ caractères hors stopwords
     words = re.findall(r"\b\w{4,}\b", question, re.IGNORECASE)
@@ -241,7 +242,7 @@ def synthesize_stream(
 
     full_text = ""
     try:
-        for event_type, chunk in _chat.complete_stream(SYNTHESIS_SYSTEM_PROMPT, messages):
+        for event_type, chunk in _chat.complete_stream(case_state.prompt_for("synthesis", SYNTHESIS_SYSTEM_PROMPT), messages):
             if event_type == "thinking" and chunk:
                 yield sse({"type": "thinking", "text": chunk})
             elif event_type == "text" and chunk:
@@ -284,7 +285,7 @@ def synthesize(
         context = "(aucun extrait plein texte trouvé dans les documents indexés)"
     messages = _build_messages(question, history, session_ctx, briefing, context)
     try:
-        result = _chat.complete(SYNTHESIS_SYSTEM_PROMPT, messages, tools=None)
+        result = _chat.complete(case_state.prompt_for("synthesis", SYNTHESIS_SYSTEM_PROMPT), messages, tools=None)
         answer_text = _strip_thinking(result.get("text", ""))
     except Exception as exc:
         answer_text = f"Erreur lors de la synthèse : {exc}"

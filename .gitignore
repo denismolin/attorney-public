@@ -26,3 +26,7 @@ data/generated/settings.json
 # Divers
 .DS_Store
 *.log
+
+# Outils locaux (contiennent des chemins et noms du poste de développement)
+graphify-out/
+.claude/

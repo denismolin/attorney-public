@@ -88,14 +88,19 @@ cp .env.example .env        # API keys can also be entered later via /settings
 docker compose -f docker-compose.prod.yml up -d --build
 # → http://localhost:5000
 
-# 4. Retrieve the auto-generated admin password, printed once on first startup
-docker compose -f docker-compose.prod.yml logs app | grep -A2 "Compte admin créé"
+# 4. Read the one-time setup code printed on first startup
+docker compose -f docker-compose.prod.yml logs app | grep -A2 "code d'installation"
 ```
 
-Log in at `/login` with that admin account (see [Authentication](#authentication)),
-then: open **`/settings`** to enter providers, models and API keys (applied live, no
-restart), and **restore the data** via `/admin` (*Import* button) or
-`python migrate.py import` — see [Portability](#portability--migration).
+Open the app in a browser: with no account yet, it shows the **setup wizard**
+(see [First-run setup](#first-run-setup)). Enter the setup code, create the
+administrator account, then follow the optional steps (vector database location,
+models and API keys, collection mailbox, first case). To bring existing data over
+instead, **restore it** via `/admin` (*Import* button) or `python migrate.py import`
+— see [Portability](#portability--migration).
+
+The compose files start three services: `chromadb`, `app`, and `maild` (the mailbox
+daemon, idle until a mailbox is enabled in the settings).
 
 ### B. Local dev (venv)
 
@@ -178,32 +183,68 @@ roles:
 
 - **admin** — full access, plus `/settings` (providers/API keys), `/admin`
   (indexing, migration import/export) and `/admin/users` (user management).
-- **user** — access to all research features (timeline, graph, chat, synthesis,
-  advisor, eval); no access to settings, indexing, or user management.
+- **user** — works on cases: dashboard, timeline, graph, chat, synthesis, advisor,
+  the triage inbox (confirm the case of forwarded emails) and the case switcher;
+  no access to settings, indexing, evaluation, case management or user management.
 
-### First login
+Admins additionally manage cases (`/cases`), evaluation (`/eval`) and the mailbox.
+Access is enforced on every route and API, not only by hiding links (403 page,
+JSON 403 on `/api/*`).
 
-On first startup (when the `users` table is empty), an admin account is created
-automatically:
+### First-run setup
 
-- Username: `ADMIN_USERNAME` (defaults to `admin`).
-- Password: `ADMIN_PASSWORD` if set in `.env`; otherwise a random password is
-  **generated and printed once to the console/logs** — copy it immediately, it is
-  never shown again and never stored in plaintext.
+On first startup (when the `users` table is empty) there are two paths:
+
+- **Setup wizard (default).** The login page redirects to `/setup`. The wizard asks
+  for a **one-time setup code printed in the server logs**, so only the person
+  installing the app can create the administrator account. It then offers four
+  optional, skippable steps: where the vector database runs (this machine or another
+  machine on the LAN), models and API keys, the collection mailbox, and the first
+  case. Every step can be changed later in `/settings` and `/cases`. The wizard can
+  be left and resumed, and disappears once finished. After ten wrong codes a new
+  code is generated and printed.
+- **Scripted install.** If `ADMIN_PASSWORD` is set in `.env`, the admin account
+  (`ADMIN_USERNAME`, default `admin`) is created at startup and the wizard is
+  skipped, as in previous versions.
 
 ```bash
 # venv: look at the terminal running `python app.py`
-# Docker: docker compose -f docker-compose.prod.yml logs app | grep -A2 "Compte admin créé"
+# Docker: docker compose -f docker-compose.prod.yml logs app | grep -A2 "code d'installation"
 ```
 
-Log in at `/login` with that account.
+Installs that already have accounts never see the wizard.
+
+### Passwords
+
+Every user can change their password from the sidebar (`/account/password`).
+Accounts created or reset by an administrator receive a generated password and must
+choose their own at first login. Accounts that existed before this version are not
+forced to change theirs.
 
 ### Session key
 
 Set `FLASK_SECRET_KEY` in `.env` (generate one with
-`python -c "import secrets; print(secrets.token_hex(32))"`). Without it, a random
-key is generated on every startup and all sessions are invalidated on restart —
-fine for a quick local test, not for anything long-running.
+`python -c "import secrets; print(secrets.token_hex(32))"`). Without it, a key is
+generated once and kept with the data (`GENERATED_DIR/.session_key`, never exported).
+
+### Built-in protections
+
+- **Login throttling**: 8 failed attempts on one username (40 from one address) within
+  15 minutes block further attempts until the window passes.
+- **Cross-site requests**: any modifying request coming from another site is refused.
+  If the app is served under a name your proxy does not forward in `Host`, list it in
+  `TRUSTED_ORIGINS`.
+- **Container**: the app does not run as root. It runs as the owner of the mounted data
+  folder (or `APP_UID`/`APP_GID`, default 10001); files written as root by an earlier
+  version are re-owned on first start. `RUN_AS_ROOT=1` restores the old behaviour.
+
+### Case-specific texts stay out of the image
+
+The code holds only neutral prompts and examples. Texts specific to the default case
+(prompts, suggested questions, keywords of the `affaire` classifier) go in a private JSON
+file kept with your data: `SOURCE_DIR/_private/default_case.json` (format documented in
+[case_private.py](case_private.py)). It is read at runtime, reloaded when it changes, and
+is never part of the image.
 
 ### Managing users
 
@@ -239,7 +280,80 @@ them.
 Export/import is also available in the **`/admin`** interface (*Migration / Backup*
 panel).
 
+## Cases
+
+The app handles several cases. Each case has a name, a short description and a
+**context note** given to the assistant with every question on that case. The case
+that existed before multi-case support is the *default case*: all existing data
+belongs to it and its prompts are unchanged.
+
+- **Switching**: the sidebar selector (shown once a second case exists). Search,
+  chat, synthesis, advisor, timeline, graph and evaluation only see the active case.
+- **Where emails live**: the folder decides the case. `data/sources/<folder>/` (e.g.
+  `mails de dubois/`, `uploads/`) is the default case;
+  `data/sources/cases/<case-id>/<folder>/` belongs to `<case-id>`. A reset followed
+  by a re-index therefore restores every email to its case.
+- **Creating the first additional case** tags the existing vectors with the default
+  case (metadata only, nothing is re-embedded). The same step is available as
+  `python migrate.py add-cases`.
+- One email belongs to one case.
+
+## Collection mailbox
+
+Users forward emails to a dedicated mailbox; the `maild` service polls it over IMAP
+and puts each email in a **triage queue** (`/inbox`) with a proposed case and the
+reasons for it. A user confirms or changes the case; only then does the email join
+the case and get indexed. Nothing is ever deleted from the mailbox.
+
+Configure it in `/settings` → *Boîte de collecte* (or in the setup wizard):
+
+- **IMAP** host, port, user and password. For Gmail / Google Workspace use an *app
+  password* with `imap.gmail.com:993`. Password IMAP does not work with Microsoft 365.
+- **Allowed senders** (addresses or `@domain`). Mail from anyone else is quarantined,
+  and while the list is empty everything is quarantined. Optionally require the
+  receiving server's SPF/DKIM/DMARC verdict, since a sender address can be forged.
+- **Automatic filing** (off by default): files without review only when the case is
+  certain — the email replies to an already-filed email, comes from a participant of
+  a single case, or carries a `[dossier: name]` tag from an allowed sender. Content
+  similarity and the LLM only *suggest*; text inside an email cannot decide its own
+  filing.
+
+Forwarded messages are unwrapped so that the **original** email is indexed (its
+sender, date, text and attachments), whether it was forwarded as an attachment or
+inline. Incoming mail is held in `data/sources/_mailbox/`, which indexing ignores.
+
+```bash
+python mail_daemon.py                      # the service (compose: maild)
+python mail_daemon.py --once --from-dir D  # run the pipeline on local .eml files
+```
+
+## Vector database on another machine
+
+ChromaDB can run on another machine of the LAN (for example a NAS) while the app,
+the emails and the SQLite database stay where they are.
+
+1. On the NAS, start ChromaDB with [deploy/docker-compose.nas.yml](deploy/docker-compose.nas.yml)
+   (QNAP: Container Station). **Read the security notes in that file**: ChromaDB has
+   no authentication and holds the text of the indexed emails, so restrict its port
+   to the app machine's IP in the NAS firewall.
+2. Move the existing vectors without re-embedding: `/settings` → *Base vectorielle*
+   → *Copier les vecteurs vers cette adresse*, or
+   `python migrate.py copy-vectors --to <nas-ip>:8000`.
+3. Save the address in `/settings` (or pick it in the setup wizard). It applies to
+   new requests immediately, on every worker.
+
+Language and embedding models need a GPU machine or a cloud provider; a NAS cannot
+serve them. A LAN model server (vLLM, Ollama, any OpenAI-compatible endpoint) is
+configured with the existing *vLLM* fields.
+
 ## Publishing the Docker image (optional)
+
+**Before pushing, check what the image contains.** `.dockerignore` keeps `data/`,
+`backups/`, `.env`, `settings.json`, local tooling folders and documentation out of
+the build context, so the image holds application code only. Two things remain your
+decision: the code itself contains the default case's prompts and keyword lists
+(party names, amounts), and a repository on Docker Hub is public unless you create
+it as private.
 
 To push the image to your own registry (e.g. Docker Hub), set your namespace —
 requires `docker login`:

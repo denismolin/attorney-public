@@ -15,6 +15,7 @@ import time
 from contextlib import contextmanager
 from typing import Iterator
 
+import case_state
 from config import DB_PATH
 
 
@@ -30,7 +31,9 @@ def _conn() -> Iterator[sqlite3.Connection]:
         conn.close()
 
 
-def init_eval_db() -> None:
+def init_eval_db(reset_running: bool = True) -> None:
+    """Crée/migre le schéma. `reset_running=False` pour les processus annexes
+    (démon mail, import) qui ne doivent pas effacer l'état d'un job de l'app."""
     with _conn() as c:
         c.executescript(
             """
@@ -93,11 +96,13 @@ def init_eval_db() -> None:
         )
         c.execute("INSERT OR IGNORE INTO eval_gen_progress (id, running) VALUES (1, 0)")
         # Réinitialise running=0 au démarrage (évite un état bloqué après un crash)
-        c.execute("UPDATE eval_gen_progress SET running=0 WHERE id=1 AND running=1")
+        if reset_running:
+            c.execute("UPDATE eval_gen_progress SET running=0 WHERE id=1 AND running=1")
         # Migration : ajoute la colonne sources si absente (DB créée avant cette version)
-        cols = {row[1] for row in c.execute("PRAGMA table_info(eval_results)").fetchall()}
-        if "sources" not in cols:
-            c.execute("ALTER TABLE eval_results ADD COLUMN sources TEXT")
+        from state import add_column_if_missing
+        add_column_if_missing(c, "eval_results", "sources")
+        add_column_if_missing(c, "eval_questions", "case_id", "TEXT NOT NULL DEFAULT 'default'")
+        add_column_if_missing(c, "eval_runs", "case_id", "TEXT NOT NULL DEFAULT 'default'")
 
 
 # --------------------------------------------------------------------------- #
@@ -168,8 +173,8 @@ def insert_question(q: dict) -> int:
     with _conn() as c:
         cur = c.execute(
             """INSERT INTO eval_questions
-               (question, expected, category, difficulty, notes, source_chunk, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+               (question, expected, category, difficulty, notes, source_chunk, created_at, case_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 q["question"],
                 q["expected"],
@@ -178,6 +183,7 @@ def insert_question(q: dict) -> int:
                 q.get("notes"),
                 q.get("source_chunk"),
                 time.time(),
+                case_state.active_case_id(),
             ),
         )
         return cur.lastrowid
@@ -217,6 +223,10 @@ def list_questions(
         q += " AND category=?"; params.append(category)
     if difficulty:
         q += " AND difficulty=?"; params.append(difficulty)
+    # Jeu de questions propre au dossier actif (sans filtre s'il n'existe qu'un dossier).
+    case_id = case_state.query_filter()
+    if case_id:
+        q += " AND case_id=?"; params.append(case_id)
     q += " ORDER BY id ASC"
     with _conn() as c:
         return [dict(r) for r in c.execute(q, params).fetchall()]
@@ -224,7 +234,11 @@ def list_questions(
 
 def clear_questions() -> int:
     with _conn() as c:
-        cur = c.execute("DELETE FROM eval_questions")
+        case_id = case_state.query_filter()
+        if case_id:
+            cur = c.execute("DELETE FROM eval_questions WHERE case_id=?", (case_id,))
+        else:
+            cur = c.execute("DELETE FROM eval_questions")
         return cur.rowcount
 
 
@@ -253,9 +267,9 @@ def create_run(run_id: str, provider: str, model: str, total: int) -> None:
     with _conn() as c:
         c.execute(
             """INSERT INTO eval_runs
-               (run_id, started_at, provider, model, total, current, phase, running)
-               VALUES (?, ?, ?, ?, ?, 0, 'démarrage', 1)""",
-            (run_id, time.time(), provider, model, total),
+               (run_id, started_at, provider, model, total, current, phase, running, case_id)
+               VALUES (?, ?, ?, ?, ?, 0, 'démarrage', 1, ?)""",
+            (run_id, time.time(), provider, model, total, case_state.active_case_id()),
         )
 
 
@@ -296,6 +310,11 @@ def get_run(run_id: str) -> dict | None:
 
 def list_runs() -> list[dict]:
     with _conn() as c:
+        case_id = case_state.query_filter()
+        if case_id:
+            return [dict(r) for r in c.execute(
+                "SELECT * FROM eval_runs WHERE case_id=? ORDER BY started_at DESC", (case_id,)
+            ).fetchall()]
         return [dict(r) for r in c.execute(
             "SELECT * FROM eval_runs ORDER BY started_at DESC"
         ).fetchall()]

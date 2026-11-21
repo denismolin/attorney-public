@@ -16,10 +16,11 @@ import re
 from rag import intent as intent_mod
 from rag import planner as planner_mod
 from rag.providers import Chat, get_chat
+import case_state
 from rag.retrieve import Hit, format_context, search
 
 SYSTEM_PROMPT = """Tu es un assistant juridique qui aide à analyser la correspondance \
-d'une succession franco-italienne (affaire DUPONT / MARTIN / DURAND).
+d'un dossier juridique.
 
 Règles impératives :
 - Réponds en FRANÇAIS, de façon précise, concise et professionnelle.
@@ -154,7 +155,7 @@ def _retrieve_then_read(
             f"Réponds en français en citant tes sources [date — correspondant — sujet]."
         ),
     })
-    result = chat.complete(SYSTEM_PROMPT, messages, tools=None)
+    result = chat.complete(case_state.prompt_for("chat", SYSTEM_PROMPT), messages, tools=None)
     answer_text = _strip_thinking(result.get("text", ""))
     new_ctx = _update_session_ctx(session_ctx, answer_text, hits, None)
     return {"answer": answer_text, "sources": sources, "session_ctx": new_ctx}
@@ -223,7 +224,7 @@ def answer(
     })
 
     try:
-        result = chat.complete(SYSTEM_PROMPT, messages, tools=None)
+        result = chat.complete(case_state.prompt_for("chat", SYSTEM_PROMPT), messages, tools=None)
         answer_text = _strip_thinking(result.get("text", ""))
     except Exception:  # noqa: BLE001
         return _retrieve_then_read(question, history, chat, session_ctx)

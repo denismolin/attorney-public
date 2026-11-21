@@ -1,40 +1,105 @@
 <!DOCTYPE html>
+{% set authed = current_user.is_authenticated %}
+{% set is_admin = authed and current_user.role == 'admin' %}
 <html lang="fr">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+{% include "_head.html" %}
   <title>{% block title %}Assistant juridique v{{ app_version }}{% endblock %}</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
-  <header class="topbar">
-    <div class="brand">⚖️ Assistant juridique <strong>v{{ app_version }}</strong></div>
-    <nav>
-      <a href="{{ url_for('index') }}" class="{% block nav_timeline %}{% endblock %}">Frise</a>
-      <a href="{{ url_for('graph_page') }}" class="{% block nav_graph %}{% endblock %}">Graphe</a>
-      <a href="{{ url_for('synthesis_page') }}" class="{% block nav_synthesis %}{% endblock %}">Synthèse</a>
-      <a href="{{ url_for('advisor_page') }}" class="{% block nav_advisor %}{% endblock %}">Conseil</a>
-      <a href="{{ url_for('chat_page') }}" class="{% block nav_chat %}{% endblock %}">Chat</a>
-      {% if current_user.is_authenticated and current_user.role == 'admin' %}
-      <a href="{{ url_for('admin_page') }}" class="{% block nav_admin %}{% endblock %}">Indexation</a>
+{% if authed and not bare_layout %}
+  <a class="skip-link" href="#contenu">Aller au contenu</a>
+  <div class="shell">
+    <aside class="sidebar" id="sidebar" aria-label="Navigation principale">
+      <a class="brand" href="{{ url_for('home_page') }}">
+        <span class="brand-mark">{{ icon('scale') }}</span>
+        <span>Assistant juridique <small>v{{ app_version }}</small></span>
+      </a>
+
+      {% if cases and cases|length > 1 %}
+      <div class="case-switch">
+        <label for="case-select">Dossier actif</label>
+        <select id="case-select" data-action-change="switch-case">
+          {% for c in cases %}
+          <option value="{{ c.case_id }}"{% if c.case_id == active_case_id %} selected{% endif %}>{{ c.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
       {% endif %}
-      <a href="{{ url_for('eval_page') }}" class="{% block nav_eval %}{% endblock %}">Évaluation</a>
-      {% if current_user.is_authenticated and current_user.role == 'admin' %}
-      <a href="{{ url_for('settings_page') }}" class="{% block nav_settings %}{% endblock %}">Réglages</a>
-      <a href="{{ url_for('admin_users_page') }}" class="{% block nav_admin_users %}{% endblock %}">Utilisateurs</a>
+
+      <nav class="nav-group" aria-label="Dossier">
+        <div class="nav-title">Dossier</div>
+        <a href="{{ url_for('home_page') }}" class="nav-link {% block nav_home %}{% endblock %}">{{ icon('home') }} Accueil</a>
+        <a href="{{ url_for('index') }}" class="nav-link {% block nav_timeline %}{% endblock %}">{{ icon('timeline') }} Frise</a>
+        <a href="{{ url_for('graph_page') }}" class="nav-link {% block nav_graph %}{% endblock %}">{{ icon('graph') }} Graphe</a>
+        <a href="{{ url_for('synthesis_page') }}" class="nav-link {% block nav_synthesis %}{% endblock %}">{{ icon('synthesis') }} Synthèse</a>
+        <a href="{{ url_for('advisor_page') }}" class="nav-link {% block nav_advisor %}{% endblock %}">{{ icon('advisor') }} Conseil</a>
+        <a href="{{ url_for('chat_page') }}" class="nav-link {% block nav_chat %}{% endblock %}">{{ icon('chat') }} Chat</a>
+      </nav>
+
+      {% if mailbox_enabled or inbox_count %}
+      <nav class="nav-group" aria-label="Boîte de réception">
+        <a href="{{ url_for('inbox_page') }}" class="nav-link {% block nav_inbox %}{% endblock %}">{{ icon('inbox') }} À trier
+          {% if inbox_count %}<span class="nav-count" aria-label="{{ inbox_count }} en attente">{{ inbox_count }}</span>{% endif %}</a>
+      </nav>
       {% endif %}
-      <a href="{{ url_for('aide_page') }}" class="{% block nav_aide %}{% endblock %}">Aide</a>
-    </nav>
-    {% if current_user.is_authenticated %}
-    <form method="post" action="{{ url_for('logout') }}" style="margin:0;">
-      <button type="submit" class="btn-secondary btn-sm">Déconnexion ({{ current_user.username }})</button>
-    </form>
-    {% endif %}
-  </header>
-  <main>
-    {% block content %}{% endblock %}
-  </main>
-  <script>window.APP_ROOT = "{{ request.script_root }}";</script>
+
+      {% if is_admin %}
+      <nav class="nav-group" aria-label="Administration">
+        <div class="nav-title">Administration</div>
+        <a href="{{ url_for('cases_page') }}" class="nav-link {% block nav_cases %}{% endblock %}">{{ icon('cases') }} Dossiers</a>
+        <a href="{{ url_for('admin_page') }}" class="nav-link {% block nav_admin %}{% endblock %}">{{ icon('index') }} Indexation</a>
+        <a href="{{ url_for('eval_page') }}" class="nav-link {% block nav_eval %}{% endblock %}">{{ icon('eval') }} Évaluation</a>
+        <a href="{{ url_for('settings_page') }}" class="nav-link {% block nav_settings %}{% endblock %}">{{ icon('settings') }} Réglages</a>
+        <a href="{{ url_for('admin_users_page') }}" class="nav-link {% block nav_admin_users %}{% endblock %}">{{ icon('users') }} Utilisateurs</a>
+      </nav>
+      {% endif %}
+
+      <nav class="nav-group" aria-label="Aide">
+        <a href="{{ url_for('aide_page') }}" class="nav-link {% block nav_aide %}{% endblock %}">{{ icon('help') }} Aide</a>
+      </nav>
+
+      <div class="sidebar-foot">
+        <div class="user-chip">
+          <span class="avatar">{{ current_user.username[:2] }}</span>
+          <span class="who">{{ current_user.username }}
+            <span class="role">{{ 'Administrateur' if is_admin else 'Utilisateur' }}</span></span>
+        </div>
+        <div class="side-actions">
+          <button type="button" class="side-btn" data-action="theme" title="Basculer entre thème clair et sombre">{{ icon('theme') }}<span class="sr-only">Changer de thème</span></button>
+          <a class="side-btn" href="{{ url_for('account_password') }}" title="Changer mon mot de passe">{{ icon('key') }}<span class="sr-only">Changer mon mot de passe</span></a>
+          <form method="post" action="{{ url_for('logout') }}">
+            <button type="submit" class="side-btn" title="Se déconnecter">{{ icon('logout') }}<span class="sr-only">Se déconnecter</span></button>
+          </form>
+        </div>
+      </div>
+    </aside>
+    <div class="scrim" data-action="nav-close"></div>
+
+    <div class="content">
+      <header class="mobilebar">
+        <button type="button" class="side-btn" data-action="nav-open" aria-controls="sidebar" aria-expanded="false">{{ icon('menu') }}<span class="sr-only">Ouvrir le menu</span></button>
+        <span class="title">Assistant juridique</span>
+      </header>
+      <main id="contenu">
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+  </div>
+{% else %}
+  <div class="center-page">
+    <div class="center-card {% block center_class %}{% endblock %}">
+      <div class="center-brand"><span class="brand-mark">{{ icon('scale') }}</span> Assistant juridique</div>
+      {{ self.content() }}
+    </div>
+  </div>
+{% endif %}
+  <div class="toasts" id="toasts" role="status" aria-live="polite"></div>
+  <script>
+    window.APP_ROOT = "{{ request.script_root }}";
+    window.ACTIVE_CASE = {{ (active_case_id | default('default')) | tojson }};
+  </script>
+  <script src="{{ url_for('static', filename='common.js') }}?v={{ sv }}"></script>
   {% block scripts %}{% endblock %}
 </body>
 </html>

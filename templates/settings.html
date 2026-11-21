@@ -7,7 +7,7 @@
   <h1>Réglages</h1>
   <p class="muted">
     Choix des providers, modèles et clés API. Enregistré dans
-    <code>data/settings.json</code> (jamais commité, jamais inclus dans une archive de
+    <code>settings.json</code> (jamais commité, jamais inclus dans une archive de
     migration) et appliqué <strong>à chaud</strong> : les nouvelles requêtes utilisent
     aussitôt la nouvelle configuration, sans redémarrer l'application.
   </p>
@@ -93,8 +93,117 @@
     <strong>Enregistrer</strong>, puis <strong>Tester</strong>.
   </p>
 </div>
+
+{% set ch = settings.chroma %}
+{% set mb = settings.mailbox %}
+<div class="panel" id="chroma-panel">
+  <h2>Base vectorielle (ChromaDB)</h2>
+  <p class="lede">La base qui stocke les vecteurs peut tourner sur cette machine ou sur une autre machine
+    du réseau (un NAS, par exemple). Les emails et pièces jointes restent ici.</p>
+  <div class="form-grid" style="max-width:760px;">
+    <label>Adresse (nom ou IP)
+      <input id="chroma_host" class="input" value="{{ ch.host }}" placeholder="192.168.1.20">
+    </label>
+    <label>Port
+      <input id="chroma_port" class="input" type="number" min="1" max="65535" value="{{ ch.port }}">
+    </label>
+    <label>En-tête d'authentification (facultatif)
+      <input id="chroma_auth_header" class="input" type="password" autocomplete="off"
+             placeholder="{% if ch.auth_header.configured %}configuré ({{ ch.auth_header.hint }}){% else %}aucun{% endif %}">
+    </label>
+  </div>
+  <label style="display:flex; gap:0.5rem; align-items:center; margin-top:var(--sp-3);">
+    <input type="checkbox" id="chroma_ssl"{% if ch.ssl %} checked{% endif %}> Connexion chiffrée (HTTPS)
+  </label>
+  <p class="hint" style="margin-top:var(--sp-2);">Sans authentification, limitez l'accès au port de la base à cette machine
+    (pare-feu du NAS) : elle contient le texte d'emails confidentiels. Laissez l'adresse vide puis enregistrez
+    pour revenir au réglage de l'installation.</p>
+  <div class="btn-row" style="margin-top:var(--sp-3);">
+    <button type="button" id="chroma-save">Enregistrer</button>
+    <button type="button" class="btn-secondary" id="chroma-test">Tester la connexion</button>
+    <button type="button" class="btn-secondary" id="chroma-copy" title="Copie les vecteurs actuels vers l'adresse saisie, sans recalcul">Copier les vecteurs vers cette adresse</button>
+    <span id="chroma-msg" class="hint" role="status"></span>
+  </div>
+</div>
+
+<div class="panel" id="mailbox-panel">
+  <h2>Boîte de collecte</h2>
+  <p class="lede">Une adresse email à laquelle les utilisateurs transfèrent des messages. L'application la relève,
+    propose un dossier pour chaque email et le met en file de tri.</p>
+  <label style="display:flex; gap:0.5rem; align-items:center; margin-bottom:var(--sp-3);">
+    <input type="checkbox" id="imap_enabled"{% if mb.imap_enabled %} checked{% endif %}> <strong>Relever la boîte</strong>
+  </label>
+  <div class="form-grid" style="max-width:760px;">
+    <label>Serveur IMAP
+      <input id="imap_host" class="input" value="{{ mb.imap_host }}" placeholder="imap.gmail.com">
+    </label>
+    <label>Port
+      <input id="imap_port" class="input" type="number" min="1" max="65535" value="{{ mb.imap_port }}">
+    </label>
+    <label>Identifiant
+      <input id="imap_user" class="input" value="{{ mb.imap_user }}" autocomplete="off" placeholder="dossiers@cabinet.fr">
+    </label>
+    <label>Mot de passe
+      <input id="imap_password" class="input" type="password" autocomplete="new-password"
+             placeholder="{% if mb.imap_password.configured %}configuré ({{ mb.imap_password.hint }}){% else %}non configuré{% endif %}">
+      <span class="hint">Gmail : un « mot de passe d'application », pas celui du compte.</span>
+    </label>
+    <label>Dossier à relever
+      <input id="imap_folder" class="input" value="{{ mb.imap_folder }}">
+    </label>
+    <label>Relève toutes les (secondes)
+      <input id="imap_poll_interval" class="input" type="number" min="30" step="30" value="{{ mb.imap_poll_interval }}">
+    </label>
+    <label>Après collecte
+      <select id="imap_processed_action" class="input">
+        <option value="seen"{% if mb.imap_processed_action == 'seen' %} selected{% endif %}>Marquer comme lu</option>
+        <option value="move"{% if mb.imap_processed_action == 'move' %} selected{% endif %}>Déplacer dans un dossier</option>
+      </select>
+    </label>
+    <label>Dossier de destination
+      <input id="imap_processed_folder" class="input" value="{{ mb.imap_processed_folder }}">
+    </label>
+  </div>
+  <label style="display:flex; gap:0.5rem; align-items:center; margin-top:var(--sp-3);">
+    <input type="checkbox" id="imap_ssl"{% if mb.imap_ssl %} checked{% endif %}> Connexion chiffrée dès l'ouverture (SSL/TLS, port 993)
+  </label>
+  <p class="hint">Aucun message n'est jamais supprimé de la boîte.</p>
+
+  <h3>Qui peut transférer des emails</h3>
+  <div class="stack" style="max-width:760px;">
+    <label class="field">Adresse affichée aux utilisateurs
+      <input id="mailbox_address" class="input" value="{{ mb.mailbox_address }}" placeholder="dossiers@cabinet.fr">
+    </label>
+    <label class="field">Expéditeurs autorisés
+      <textarea id="mailbox_allowed_senders" class="input" rows="3" placeholder="@cabinet.fr, associe@exemple.fr">{{ mb.mailbox_allowed_senders }}</textarea>
+      <span class="hint">Adresses ou domaines (« @cabinet.fr »), séparés par des virgules. Tout autre expéditeur va en
+        quarantaine. Tant que cette liste est vide, tous les messages vont en quarantaine.</span>
+    </label>
+    <label style="display:flex; gap:0.5rem; align-items:flex-start;">
+      <input type="checkbox" id="mailbox_require_auth_results"{% if mb.mailbox_require_auth_results %} checked{% endif %} style="margin-top:0.25rem;">
+      <span>Exiger que le serveur de réception authentifie l'expéditeur (SPF, DKIM, DMARC)
+        <span class="hint" style="display:block;">Recommandé : une adresse d'expéditeur peut être usurpée.</span></span>
+    </label>
+  </div>
+
+  <h3>Classement</h3>
+  <label style="display:flex; gap:0.5rem; align-items:flex-start; max-width:760px;">
+    <input type="checkbox" id="mailbox_autofile"{% if mb.mailbox_autofile %} checked{% endif %} style="margin-top:0.25rem;">
+    <span>Classer sans relecture quand le dossier est certain
+      <span class="hint" style="display:block;">Seulement si l'email répond à un email déjà classé, vient d'un participant d'un seul
+        dossier, ou porte une étiquette <code>[dossier: nom]</code>. Dans tous les autres cas, une personne valide le dossier.</span></span>
+  </label>
+  <input type="hidden" id="mailbox_autofile_threshold" value="{{ mb.mailbox_autofile_threshold }}">
+
+  <div class="btn-row" style="margin-top:var(--sp-4);">
+    <button type="button" id="mailbox-save">Enregistrer</button>
+    <button type="button" class="btn-secondary" id="mailbox-test">Tester la connexion</button>
+    <span id="mailbox-msg" class="hint" role="status"></span>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
 <script src="{{ url_for('static', filename='settings.js') }}?v={{ sv }}"></script>
+<script src="{{ url_for('static', filename='settings_extra.js') }}?v={{ sv }}"></script>
 {% endblock %}

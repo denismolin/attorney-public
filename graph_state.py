@@ -81,10 +81,9 @@ def init_graph_db() -> None:
             """
         )
         # Migration : ajoute les nouvelles colonnes JSON sur une table préexistante.
-        cols = {row[1] for row in c.execute("PRAGMA table_info(doc_enrichment)").fetchall()}
+        from state import add_column_if_missing
         for col in ("parties_json", "dates_json", "declarations_json", "codes_json", "content_hash"):
-            if col not in cols:
-                c.execute(f"ALTER TABLE doc_enrichment ADD COLUMN {col} TEXT")
+            add_column_if_missing(c, "doc_enrichment", col)
 
         # Index sur content_hash : créé après la migration ci-dessus (la colonne
         # peut ne pas encore exister sur une base préexistante à ce stade).
@@ -237,13 +236,14 @@ def add_entities(doc_id: str, entities: list[str], codes) -> None:
             if v:
                 rows.append((doc_id, "code_autre", v, normalize_code(v)))
 
-    if not rows:
-        return
     with _conn() as c:
-        c.executemany(
-            "INSERT INTO doc_entities (doc_id, kind, value, value_norm) VALUES (?, ?, ?, ?)",
-            rows,
-        )
+        # Remplace les entités du document : un ré-enrichissement ne doit pas les empiler.
+        c.execute("DELETE FROM doc_entities WHERE doc_id=?", (doc_id,))
+        if rows:
+            c.executemany(
+                "INSERT INTO doc_entities (doc_id, kind, value, value_norm) VALUES (?, ?, ?, ?)",
+                rows,
+            )
 
 
 def docs_by_code(value: str) -> list[str]:
@@ -286,6 +286,32 @@ def build_shared_code_edges(min_len: int = 4) -> int:
                         (doc_ids[i], doc_ids[j]),
                     )
                     n += 1
+    return n
+
+
+def build_shared_code_edges_for(doc_ids: list[str], min_len: int = 4) -> int:
+    """Variante incrémentale : relie seulement les documents donnés à ceux qui
+    partagent un de leurs codes. Mêmes arêtes que `build_shared_code_edges`."""
+    if not doc_ids:
+        return 0
+    n = 0
+    with _conn() as c:
+        marks = ",".join("?" * len(doc_ids))
+        pairs = c.execute(
+            f"""SELECT DISTINCT a.doc_id AS a, b.doc_id AS b
+                FROM doc_entities a JOIN doc_entities b ON a.value_norm = b.value_norm
+                WHERE a.doc_id IN ({marks}) AND b.doc_id != a.doc_id
+                  AND a.kind LIKE 'code%' AND b.kind LIKE 'code%' AND length(a.value_norm) >= ?""",
+            (*doc_ids, min_len),
+        ).fetchall()
+        for row in pairs:
+            src, dst = sorted((row["a"], row["b"]))
+            cur = c.execute(
+                """INSERT OR IGNORE INTO doc_edges (src, dst, rel, weight, source)
+                   VALUES (?, ?, 'shares_code', 1.0, 'code_match')""",
+                (src, dst),
+            )
+            n += cur.rowcount
     return n
 
 

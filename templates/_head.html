@@ -1,0 +1,13 @@
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <script>
+    /* Thème choisi par l'utilisateur, appliqué avant le premier rendu (pas de flash). */
+    (function () {
+      try {
+        var t = localStorage.getItem("ui_theme");
+        if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
+      } catch (e) {}
+    })();
+  </script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v={{ sv }}">

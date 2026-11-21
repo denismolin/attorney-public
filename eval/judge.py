@@ -12,6 +12,7 @@ import threading
 import uuid
 from typing import Any
 
+import case_state
 import eval_state
 from config import Config, cfg
 from parsing.jsonparse import parse_json_response as _parse_json_response
@@ -63,8 +64,9 @@ def start_run(
         _cancel_flags[run_id] = cancel_event
 
     t = threading.Thread(
-        target=_run_safe,
-        args=(run_id, provider, model, questions, threshold, cancel_event),
+        target=case_state.run_in_case,
+        args=(case_state.active_case_id(), _run_safe,
+              run_id, provider, model, questions, threshold, cancel_event),
         name=f"eval-judge-{run_id[:8]}",
         daemon=True,
     )

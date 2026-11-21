@@ -446,5 +446,8 @@ def get_chat(config: Config = cfg) -> Chat:
     if provider == "anthropic":
         return _AnthropicChat(config.chat_model, config.anthropic_api_key)
     if provider == "mistral":
-        return _MistralChat(config.chat_model, config.mistral_api_key)
+        model = config.chat_model
+        if not model or model.lower() == "auto":
+            model = config.mistral_chat_model
+        return _MistralChat(model, config.mistral_api_key)
     raise ValueError(f"CHAT_PROVIDER inconnu : {provider!r}")

@@ -13,13 +13,16 @@ import hashlib
 import threading
 import time
 
+import case_state
 import graph_state
 import state
 from config import cfg
 from parsing import attachments, classifier, enrich
 from parsing.cleaner import clean_body
-from parsing.eml_parser import Email, parse_all
-from parsing.threading_ import build_threads
+from pathlib import Path
+
+from parsing.eml_parser import Email, parse_all, parse_located, _stable_doc_id
+from parsing.threading_ import assign_thread, build_threads
 from rag.chunker import chunk_document
 from rag.index import (
     existing_ids,
@@ -60,7 +63,7 @@ def _enrichment_chunk_text(header: str, enr: dict) -> str:
         d_parts = [f"{d.get('label', '')} : {d.get('date', '')}" for d in dates if d.get("date")]
         if d_parts:
             parts.append("Dates : " + " ; ".join(d_parts))
-    # Parties (ex : "émetteur Maître Dubois (avocat) ; destinataire Maître Leroy (avocat)")
+    # Parties (ex : "émetteur Maître X (avocat) ; destinataire Maître Y (avocat)")
     parties = enr.get("parties") or []
     if isinstance(parties, list) and parties:
         p_parts = [
@@ -86,7 +89,8 @@ def _enrichment_chunk_text(header: str, enr: dict) -> str:
             if isinstance(sub, list):
                 all_codes.extend(v for v in sub if v)
         if all_codes:
-            parts.append("Références : " + " ; ".join(all_codes))
+            str_codes = [v if isinstance(v, str) else str(v) for v in all_codes]
+            parts.append("Références : " + " ; ".join(str_codes))
     return "\n".join(parts)
 
 
@@ -158,22 +162,40 @@ def start_async(
     """
     global _thread
     with _lock:
-        if state.is_running():
-            return False
         state.init_db()
-        _thread = threading.Thread(
-            target=_run_safe,
-            kwargs={"enrich_provider": enrich_provider, "enrich_model": enrich_model, "force": force},
-            name="indexer",
-            daemon=True,
-        )
-        _thread.start()
+        # Le bail est pris ICI, de façon synchrone : deux requêtes simultanées (ou
+        # deux workers) ne peuvent pas démarrer deux indexations.
+        owner = state.new_lease_owner()
+        if not state.acquire_lease(state.INDEX_LEASE, owner, kind="index"):
+            return False
+        try:
+            _thread = threading.Thread(
+                target=_run_safe,
+                kwargs={"enrich_provider": enrich_provider, "enrich_model": enrich_model,
+                        "force": force, "lease_owner": owner},
+                name="indexer",
+                daemon=True,
+            )
+            _thread.start()
+        except Exception:
+            state.release_lease(state.INDEX_LEASE, owner)
+            raise
         return True
 
 
-def _run_safe(enrich_provider: str | None = None, enrich_model: str | None = None, force: bool = False) -> None:
+class IndexAlreadyRunning(RuntimeError):
+    """Une autre indexation (autre thread, worker ou processus) tient le bail."""
+
+
+def _run_safe(
+    enrich_provider: str | None = None,
+    enrich_model: str | None = None,
+    force: bool = False,
+    lease_owner: str | None = None,
+) -> None:
     try:
-        run(force=force, enrich_provider=enrich_provider, enrich_model=enrich_model)
+        run(force=force, enrich_provider=enrich_provider, enrich_model=enrich_model,
+            lease_owner=lease_owner)
     except Exception as exc:  # pragma: no cover
         import traceback
         tb = traceback.format_exc()
@@ -183,20 +205,110 @@ def _run_safe(enrich_provider: str | None = None, enrich_model: str | None = Non
         state.finish_progress(phase="échec")
 
 
-def run(force: bool = False, enrich_provider: str | None = None, enrich_model: str | None = None) -> dict:
-    """Exécute le pipeline. `force=True` réindexe même si le hash est inchangé."""
+def run(
+    force: bool = False,
+    enrich_provider: str | None = None,
+    enrich_model: str | None = None,
+    *,
+    lease_owner: str | None = None,
+    paths: list | None = None,
+) -> dict:
+    """Exécute le pipeline. `force=True` réindexe même si le hash est inchangé.
+
+    Sans `paths` : parcours complet des sources (comportement d'origine). Avec
+    `paths` : indexation incrémentale de ces seuls fichiers .eml, sans relire le
+    reste du fonds (fils et arêtes mis à jour à partir du registre).
+
+    Exclusif entre processus : prend le bail d'indexation (sauf si l'appelant l'a
+    déjà pris et passe `lease_owner`) et lève `IndexAlreadyRunning` s'il est tenu.
+    """
     state.init_db()
+    owner = lease_owner or state.new_lease_owner()
+    if lease_owner is None and not state.acquire_lease(state.INDEX_LEASE, owner, kind="index"):
+        raise IndexAlreadyRunning("Une indexation est déjà en cours.")
+    keeper = state.LeaseKeeper(state.INDEX_LEASE, owner).start()
+    try:
+        return _run_locked(force, enrich_provider, enrich_model, paths)
+    except BaseException:
+        # Y compris Ctrl-C en CLI : l'état ne doit pas rester « en cours ».
+        state.finish_progress(phase="échec")
+        raise
+    finally:
+        keeper.stop()
+        state.release_lease(state.INDEX_LEASE, owner)
+
+
+class _RegistryThreads:
+    """Fils calculés à la demande depuis le registre (indexation incrémentale)."""
+
+    def __init__(self, emails: list[Email]):
+        self._by_id = {e.doc_id: e for e in emails}
+
+    def get(self, doc_id: str, default=None):
+        em = self._by_id.get(doc_id)
+        return assign_thread(em) if em else default
+
+
+def _parse_paths(paths: list) -> list[Email]:
+    emails, seen = [], set()
+    for p in paths:
+        try:
+            em = parse_located(Path(p))
+        except Exception as exc:
+            state.log(f"Lecture impossible : {Path(p).name} — {exc}", level="error")
+            state.update_progress(inc_errors=1)
+            continue
+        if em.doc_id not in seen:
+            seen.add(em.doc_id)
+            emails.append(em)
+    emails.sort(key=lambda e: e.date)
+    return emails
+
+
+def _build_incremental_edges(emails: list[Email]) -> None:
+    """Fils et arêtes pour des emails indexés isolément, à partir du registre."""
+    for em in emails:
+        thread_id = assign_thread(em)          # second passage : relie les emails d'un même lot
+        state.set_thread(em.doc_id, thread_id)
+        if em.in_reply_to:
+            parent = _stable_doc_id("eml", em.in_reply_to.strip())
+            if state.get_document(parent):
+                graph_state.add_edge(em.doc_id, parent, "reply_to", source="header")
+        # Réponses arrivées avant le message auquel elles répondent.
+        for child in state.replies_to(em.message_id):
+            if child != em.doc_id:
+                graph_state.add_edge(child, em.doc_id, "reply_to", source="header")
+        fil = [d for d in state.get_thread_docs(thread_id) if d.get("type") == "mail"]
+        for prev, cur in zip(fil, fil[1:]):
+            if em.doc_id in (prev["doc_id"], cur["doc_id"]):
+                graph_state.add_edge(cur["doc_id"], prev["doc_id"], "same_thread", source="header")
+
+
+def _run_locked(force: bool, enrich_provider: str | None, enrich_model: str | None,
+                paths: list | None = None) -> dict:
+    incremental = paths is not None
+    # Progression ouverte AVANT le parsing : l'UI voit le job dès son démarrage.
+    # Une indexation incrémentale n'efface pas le journal de la dernière indexation complète.
+    state.start_progress(total=0, enrich_provider=enrich_provider, enrich_model=enrich_model,
+                         clear_log=not incremental)
     state.log("Parsing des emails…")
     state.update_progress(phase="parsing")
 
-    emails: list[Email] = parse_all()
-    total = len(emails)
-    state.start_progress(total=total, enrich_provider=enrich_provider, enrich_model=enrich_model)
-    state.log(f"{total} emails à indexer (après déduplication).")
+    if incremental:
+        emails: list[Email] = _parse_paths(paths)
+        total = len(emails)
+        state.update_progress(total=total)
+        state.log(f"Indexation incrémentale : {total} email(s).")
+        threads = _RegistryThreads(emails)
+    else:
+        emails = parse_all()
+        total = len(emails)
+        state.update_progress(total=total)
+        state.log(f"{total} emails à indexer (après déduplication).")
 
-    # Fils de discussion (déterministe, via In-Reply-To / References).
-    threads = build_threads(emails)
-    state.log(f"{len(set(threads.values()))} fils de discussion reconstruits.")
+        # Fils de discussion (déterministe, via In-Reply-To / References).
+        threads = build_threads(emails)
+        state.log(f"{len(set(threads.values()))} fils de discussion reconstruits.")
 
     # Client LLM pour l'enrichissement. Instancié une fois.
     enrich_chat = enrich.get_enrich_chat(provider=enrich_provider, model=enrich_model)
@@ -217,8 +329,14 @@ def run(force: bool = False, enrich_provider: str | None = None, enrich_model: s
         )
 
         # --- Classement (multi-affaires) + nettoyage ----------------------
-        em.affaires = classifier.classify_all(em.subject, em.body_text)
-        em.affaire = classifier.classify(em.subject, em.body_text)  # principale
+        # Les prompts d'enrichissement et le classement dépendent du dossier de l'email.
+        case_state.set_current(em.case_id)
+        if em.case_id == case_state.DEFAULT:
+            em.affaires = classifier.classify_all(em.subject, em.body_text)
+            em.affaire = classifier.classify(em.subject, em.body_text)  # principale
+        else:
+            # Les mots-clés d'affaire sont propres au dossier d'origine.
+            em.affaires, em.affaire = ["autre"], "autre"
         cleaned = clean_body(em.body_text)
         mail_text = cleaned["new"] or em.body_text
 
@@ -227,6 +345,13 @@ def run(force: bool = False, enrich_provider: str | None = None, enrich_model: s
         if not force and state.get_document_hash(em.doc_id) == content_hash:
             n_skipped += 1
             state.log(f"[{i}/{total}] ↷ skippé (inchangé) : {em.subject[:60]}")
+            # En-têtes absents des index antérieurs (métadonnée seule, aucun embedding).
+            state.fill_email_headers(
+                em.doc_id, message_id=em.message_id or None, from_addr=em.from_addr or None,
+                to_addrs=em.to_addrs or None, cc_addrs=em.cc_addrs or None, source=em.source,
+            )
+            # Un nouvel email a pu relier ce mail à un autre fil depuis sa dernière indexation.
+            state.set_thread(em.doc_id, threads.get(em.doc_id))
             # Mail inchangé : Chroma et l'enrichissement sont déjà à jour -> skip.
             # On traite quand même les PJ (idempotence gérée par PJ).
             _index_attachments(
@@ -242,6 +367,7 @@ def run(force: bool = False, enrich_provider: str | None = None, enrich_model: s
             "type": "mail",
             "doc_id": em.doc_id,
             "email_id": em.doc_id,
+            "case_id": em.case_id,
             "correspondent": em.correspondent,
             "date": em.date_iso,
             "subject": em.subject,
@@ -320,6 +446,12 @@ def run(force: bool = False, enrich_provider: str | None = None, enrich_model: s
                 "affaire": em.affaire,
                 "affaires": ",".join(em.affaires),
                 "email_id": em.doc_id,
+                "case_id": em.case_id,
+                "message_id": em.message_id or None,
+                "from_addr": em.from_addr or None,
+                "to_addrs": em.to_addrs or None,
+                "cc_addrs": em.cc_addrs or None,
+                "source": em.source,
                 "source_path": em.source_path,
                 "n_chunks": len(chunks),
                 "needs_ocr": 0,
@@ -340,10 +472,17 @@ def run(force: bool = False, enrich_provider: str | None = None, enrich_model: s
         # Pause légère pour ménager ChromaDB (200 ms par document)
         time.sleep(0.2)
 
+    case_state.set_current(None)
+
     # --- Construction des arêtes du graphe (après indexation de tous les docs) ---
     state.update_progress(phase="graphe")
-    _build_thread_edges(emails, threads)
-    n_code_edges = graph_state.build_shared_code_edges()
+    if incremental:
+        _build_incremental_edges(emails)
+        touched = [e.doc_id for e in emails] + [a.doc_id for e in emails for a in e.attachments]
+        n_code_edges = graph_state.build_shared_code_edges_for(touched)
+    else:
+        _build_thread_edges(emails, threads)
+        n_code_edges = graph_state.build_shared_code_edges()
     state.log(f"Graphe : arêtes de fil créées + {n_code_edges} liens par code partagé.")
 
     state.log(
@@ -395,7 +534,8 @@ def _index_attachments(
         full_text = "\n\n".join(t for t, _ in text_parts if t)
         att_affaires = sorted(
             set(em.affaires)
-            | set(classifier.classify_all(att.filename, full_text))
+            | set(classifier.classify_all(att.filename, full_text)
+                  if em.case_id == case_state.DEFAULT else [])
             - ({"autre"} if len(em.affaires) > 0 and em.affaires != ["autre"] else set())
         ) or ["autre"]
         att_affaire = classifier.classify(att.filename, "") if not em.affaires else em.affaire
@@ -412,6 +552,7 @@ def _index_attachments(
                     "affaire": att_affaire,
                     "affaires": ",".join(att_affaires),
                     "email_id": em.doc_id,
+                    "case_id": em.case_id,
                     "source_path": att.stored_path,
                     "n_chunks": 0,
                     "needs_ocr": 1 if first_needs_ocr else 0,
@@ -449,6 +590,7 @@ def _index_attachments(
                 "type": "attachment",
                 "doc_id": part_doc_id,
                 "email_id": em.doc_id,
+                "case_id": em.case_id,
                 "correspondent": em.correspondent,
                 "date": em.date_iso,
                 "subject": att.filename,
@@ -479,6 +621,7 @@ def _index_attachments(
                     "affaire": att_affaire,
                     "affaires": ",".join(att_affaires),
                     "email_id": em.doc_id,
+                    "case_id": em.case_id,
                     "source_path": att.stored_path,
                     "n_chunks": len(chunks),
                     "needs_ocr": 0,
@@ -536,6 +679,7 @@ def _index_attachments(
                         "type": "attachment",
                         "doc_id": att.doc_id,
                         "email_id": em.doc_id,
+                        "case_id": em.case_id,
                         "correspondent": em.correspondent,
                         "date": em.date_iso,
                         "subject": att.filename,
@@ -589,6 +733,12 @@ def _index_attachments(
 
 
 if __name__ == "__main__":
+    import sys
+
     cfg.ensure_dirs()
-    result = run()
+    try:
+        result = run()
+    except IndexAlreadyRunning as exc:
+        print(f"[indexer] {exc} Réessayez une fois celle-ci terminée.", flush=True)
+        sys.exit(1)
     print("Résultat :", result)

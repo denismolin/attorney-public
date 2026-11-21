@@ -28,6 +28,15 @@ _KIND_LABELS = {
 _KIND_ORDER = ["code_cadastre", "code_iban", "code_fiscal", "code_dossier", "code_autre"]
 
 
+def _case_clause(alias: str = "d") -> tuple[str, tuple]:
+    """Fragment SQL limitant au dossier actif (vide s'il n'existe qu'un dossier)."""
+    import case_state
+    case_id = case_state.query_filter()
+    if not case_id:
+        return "", ()
+    return f" AND {alias}.case_id = ?", (case_id,)
+
+
 @contextmanager
 def _conn() -> Iterator[sqlite3.Connection]:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -56,7 +65,8 @@ def get_chronologie() -> list[dict]:
             FROM doc_enrichment e
             JOIN documents d ON e.doc_id = d.doc_id
             WHERE e.dates_json IS NOT NULL AND e.dates_json != '[]'
-            """
+            """ + _case_clause()[0],
+            _case_clause()[1],
         ).fetchall()
 
     for row in rows:
@@ -174,10 +184,11 @@ def get_resumes_par_fil() -> list[dict]:
                    MAX(d.date) AS date_max,
                    d.affaire
             FROM documents d
-            WHERE d.thread_id IS NOT NULL
+            WHERE d.thread_id IS NOT NULL""" + _case_clause()[0] + """
             GROUP BY d.thread_id
             ORDER BY MIN(d.date) ASC
-            """
+            """,
+            _case_clause()[1],
         ).fetchall()
 
         for tr in thread_rows:
@@ -252,7 +263,8 @@ def get_points_contentieux() -> list[dict]:
             JOIN documents d ON e.doc_id = d.doc_id
             WHERE e.declarations_json IS NOT NULL
               AND e.declarations_json != '[]'
-            """
+            """ + _case_clause()[0],
+            _case_clause()[1],
         ).fetchall()
 
     for row in rows:

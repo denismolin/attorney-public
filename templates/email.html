@@ -33,7 +33,7 @@
     <li>
       <a href="{{ url_for('attachment_download', att_id=att.doc_id) }}">📎 {{ att.filename }}</a>
       <span class="muted">({{ (att.size / 1024)|round(0)|int }} Ko)</span>
-      {% if att.needs_ocr %}<span class="muted">— OCR requis (jalon 2)</span>{% endif %}
+      {% if att.needs_ocr %}<span class="muted">— OCR requis</span>{% endif %}
     </li>
     {% endfor %}
   </ul>

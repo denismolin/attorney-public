@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% block nav_cases %}active{% endblock %}
+{% block title %}Dossiers — Assistant juridique v{{ app_version }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Dossiers</h1>
+    <p class="lede">Chaque dossier regroupe la correspondance d'une affaire. Recherches, synthèses et
+      conseils ne portent que sur le dossier actif.</p>
+  </div>
+  <button type="button" id="new-case-btn">Nouveau dossier</button>
+</div>
+
+{% if not vectors_tagged and all_cases|length <= 1 %}
+<p class="notice info">À la création du premier dossier supplémentaire, les documents déjà indexés sont
+  rattachés au dossier principal. L'opération ne recalcule rien et peut prendre quelques instants.</p>
+{% endif %}
+
+<div class="panel" id="new-case-panel" hidden>
+  <h2>Nouveau dossier</h2>
+  <form id="new-case-form" class="stack">
+    <div class="form-grid">
+      <label class="field">Nom du dossier
+        <input class="input" name="name" required maxlength="80" placeholder="Ex. Litige commercial 2026">
+      </label>
+      <label class="field">Identifiant (facultatif)
+        <input class="input" name="case_id" pattern="[a-z0-9][a-z0-9-]{1,39}" placeholder="litige-commercial-2026">
+        <span class="hint">Lettres minuscules, chiffres, tirets. Sert de nom de dossier sur le disque ; définitif.</span>
+      </label>
+    </div>
+    <label class="field">Description courte
+      <input class="input" name="description" maxlength="200" placeholder="Parties, juridiction, objet">
+    </label>
+    <label class="field">Note de contexte pour l'assistant
+      <textarea class="input" name="context_md" rows="6" placeholder="Qui est notre client, qui sont les parties adverses, quels sont les points en litige, les dates et montants clés…"></textarea>
+      <span class="hint">Cette note est fournie à l'assistant à chaque question sur ce dossier. Soyez factuel.</span>
+    </label>
+    <div class="btn-row">
+      <button type="submit">Créer le dossier</button>
+      <button type="button" class="btn-secondary" id="new-case-cancel">Annuler</button>
+    </div>
+  </form>
+</div>
+
+{% for c in all_cases %}
+<div class="panel case-card" data-case="{{ c.case_id }}">
+  <div class="page-head">
+    <div>
+      <h2 style="margin:0;">{{ c.name }}
+        {% if c.is_default %}<span class="badge neutral">principal</span>{% endif %}
+        {% if c.status != 'active' %}<span class="badge neutral">archivé</span>{% endif %}
+      </h2>
+      <p class="muted" style="margin:0;"><code>{{ c.case_id }}</code> · {{ c.n_mails }} email{{ 's' if c.n_mails != 1 }}</p>
+    </div>
+    <div class="btn-row">
+      {% if not c.is_default %}
+        {% if c.status == 'active' %}
+        <button type="button" class="btn-danger-outline" data-act="archive">Archiver</button>
+        {% else %}
+        <button type="button" class="btn-secondary" data-act="restore">Réactiver</button>
+        {% endif %}
+      {% endif %}
+    </div>
+  </div>
+
+  <details>
+    <summary>Modifier la fiche et la note de contexte</summary>
+    <form class="stack case-edit" style="margin-top:var(--sp-3);">
+      <div class="form-grid">
+        <label class="field">Nom
+          <input class="input" name="name" value="{{ c.name }}" required maxlength="80">
+        </label>
+        <label class="field">Description courte
+          <input class="input" name="description" value="{{ c.description or '' }}" maxlength="200">
+        </label>
+      </div>
+      <label class="field">Note de contexte pour l'assistant
+        <textarea class="input" name="context_md" rows="6">{{ c.context_md or '' }}</textarea>
+        {% if c.is_default %}
+        <span class="hint">Laissée vide, l'assistant utilise les consignes d'origine de ce dossier. Une note saisie ici les remplace.</span>
+        {% endif %}
+      </label>
+      <div class="btn-row"><button type="submit">Enregistrer</button></div>
+    </form>
+  </details>
+
+  <details>
+    <summary>Participants ({{ c.participants|length }})</summary>
+    <p class="hint" style="margin-top:var(--sp-2);">Adresses, domaines ou noms propres à ce dossier. Ils servent à proposer
+      le bon dossier pour les emails reçus par la boîte de collecte.</p>
+    <ul class="link-list participant-list">
+      {% for p in c.participants %}
+      <li data-id="{{ p.id }}"><span class="badge neutral">{{ p.kind }}</span>
+        <span>{{ p.value }}{% if p.label %} — {{ p.label }}{% endif %}</span>
+        <button type="button" class="btn-ghost btn-sm" data-act="del-participant" style="margin-left:auto;">Retirer</button></li>
+      {% else %}
+      <li class="muted">Aucun participant.</li>
+      {% endfor %}
+    </ul>
+    <form class="btn-row participant-add" style="margin-top:var(--sp-2);">
+      <select class="eval-select" name="kind" aria-label="Type">
+        <option value="email">Adresse</option>
+        <option value="domain">Domaine</option>
+        <option value="name">Nom</option>
+      </select>
+      <input class="eval-select" name="value" required placeholder="maitre@cabinet.fr" aria-label="Valeur">
+      <input class="eval-select" name="label" placeholder="Qualité (facultatif)" aria-label="Qualité">
+      <button type="submit" class="btn-secondary">Ajouter</button>
+    </form>
+  </details>
+</div>
+{% endfor %}
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='cases.js') }}?v={{ sv }}"></script>
+{% endblock %}

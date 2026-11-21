@@ -21,6 +21,20 @@ class Hit:
     metadata: dict
 
 
+def _build_where(**clauses) -> dict | None:
+    """Filtre de métadonnées Chroma à partir de clauses égalité (les None sont ignorées).
+
+    Chroma 1.x refuse un dict à plusieurs clés de premier niveau et un `$and` à
+    moins de deux membres : on émet donc None, une clause nue, ou un `$and`.
+    """
+    parts = [{k: v} for k, v in clauses.items() if v not in (None, "")]
+    if not parts:
+        return None
+    if len(parts) == 1:
+        return parts[0]
+    return {"$and": parts}
+
+
 def search(
     query: str,
     top_k: int = 8,
@@ -32,11 +46,13 @@ def search(
     embedder = embedder or get_embedder()
     _, chunks = get_collections()
 
-    where: dict = {}
-    if affaire:
-        where["affaire"] = affaire
-    if correspondent:
-        where["correspondent"] = correspondent
+    import case_state
+
+    # Dossier actif : filtre appliqué seulement s'il existe plusieurs dossiers.
+    case_id = case_state.query_filter()
+    if case_id and case_id != case_state.DEFAULT:
+        affaire = None  # les étiquettes d'affaire n'existent que dans le dossier d'origine
+    where = _build_where(case_id=case_id, affaire=affaire, correspondent=correspondent)
 
     from rag.index import _truncate_for_embed
 
@@ -44,7 +60,7 @@ def search(
     res = chunks.query(
         query_embeddings=[q_emb],
         n_results=top_k,
-        where=where or None,
+        where=where,
         include=["documents", "metadatas", "distances"],
     )
 
@@ -57,7 +73,7 @@ def search(
         hits.append(
             Hit(
                 chunk_id=cid,
-                parent_doc_id=meta.get("parent_doc_id", ""),
+                parent_doc_id=meta.get("parent_doc_id") or meta.get("doc_id", ""),
                 text=text,
                 distance=dist,
                 metadata=meta,
@@ -82,6 +98,9 @@ def expand_with_graph(hits: list[Hit], max_extra: int = 4) -> list[Hit]:
 
     if not hits:
         return hits
+    import case_state
+
+    case_id = case_state.query_filter()
 
     present_docs = {h.parent_doc_id for h in hits if h.parent_doc_id}
     # On part des 3 meilleurs documents distincts.
@@ -102,6 +121,9 @@ def expand_with_graph(hits: list[Hit], max_extra: int = 4) -> list[Hit]:
             seen_neighbors.add(nb_id)
             for item in get_doc_chunks(nb_id, limit=1):
                 meta = dict(item.get("metadata") or {})
+                # Un voisin de graphe d'un autre dossier ne doit pas entrer dans le contexte.
+                if case_id and meta.get("case_id", case_state.DEFAULT) != case_id:
+                    break
                 meta["graph_rel"] = nb["rel"]
                 added.append(
                     Hit(
