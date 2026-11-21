@@ -290,7 +290,7 @@ belongs to it and its prompts are unchanged.
 - **Switching**: the sidebar selector (shown once a second case exists). Search,
   chat, synthesis, advisor, timeline, graph and evaluation only see the active case.
 - **Where emails live**: the folder decides the case. `data/sources/<folder>/` (e.g.
-  `mails de dubois/`, `uploads/`) is the default case;
+  `mails de <name>/`, `uploads/`) is the default case;
   `data/sources/cases/<case-id>/<folder>/` belongs to `<case-id>`. A reset followed
   by a re-index therefore restores every email to its case.
 - **Creating the first additional case** tags the existing vectors with the default
