@@ -29,6 +29,19 @@ _PDF_MIN_CHARS = 40
 _HANDWRITING_WORDS_PER_PAGE = 60
 
 
+def _vision_read(path: Path, log) -> str:
+    from parsing.vlm_ocr import transcribe_pdf
+    if log:
+        log(f"  … {path.name} : écriture manuscrite, lecture par le modèle vision")
+    return transcribe_pdf(path, cfg.vision_url, cfg.vision_api_key, log=log)
+
+
+def _restored(text: str, log) -> str:
+    """Relecture des mots mal lus (parsing/restore.py), précédée d'un avertissement."""
+    from parsing.restore import NOTE, restore
+    return NOTE + "\n" + restore(text, log=log)
+
+
 def _page_count(path: Path) -> int:
     import fitz  # PyMuPDF
 
@@ -149,12 +162,27 @@ def extract_text_parts(
                 # PDF natif : Docling apporte la structure (titres, tableaux) ; repli PyMuPDF.
                 if docling_url:
                     from parsing.docling import convert_pdf
-                    md = convert_pdf(path, docling_url, log=log)
+                    md = convert_pdf(path, docling_url, log=log) or ""
                     if len(md) >= _PDF_MIN_CHARS:
                         return [(md, False)]
                 return [(text, False)]
-            # Scan : Claude Vision lit nettement mieux nos scans (manuscrit, mauvaise
-            # qualité : jusqu'à 2x plus de mots que RapidOCR) ; Docling sert de repli.
+            # Scan. Docling d'abord (local) : il lit les scans imprimés et, quand il n'y
+            # trouve presque rien, signale une écriture manuscrite.
+            md = None
+            if docling_url:
+                from parsing.docling import convert_pdf
+                md = convert_pdf(path, docling_url, log=log, scanned=True)
+            handwritten = md is not None and len(md.split()) < _HANDWRITING_WORDS_PER_PAGE * _page_count(path)
+            md = md or ""
+            # Manuscrit + modèle vision fort (8B ou plus, sur GPU) : il lit mieux que Claude
+            # (testament : phrases juridiques cohérentes là où Claude rend du charabia).
+            if handwritten and cfg.vision_url:
+                from parsing.vlm_ocr import vision_is_strong
+                if vision_is_strong(cfg.vision_url, cfg.vision_api_key):
+                    vlm = _vision_read(path, log)
+                    if len(vlm.split()) > len(md.split()):
+                        return [(_restored(vlm, log), False)]
+            # Sinon Claude Vision (transcription déjà payée en cache d'abord).
             if api_key:
                 pdf_hash = hashlib.sha256(path.read_bytes()).hexdigest()
                 cached = _load_ocr_cache(pdf_hash)
@@ -169,20 +197,14 @@ def extract_text_parts(
                         _save_ocr_cache(pdf_hash, ocr_parts)
                 valid = [(t, False) for t in ocr_parts if len(t) >= _PDF_MIN_CHARS]
                 if valid:
+                    if handwritten:
+                        return [(_restored(t, log), False) for t, _ in valid]
                     return valid
-            md = ""
-            if docling_url:
-                from parsing.docling import convert_pdf
-                md = convert_pdf(path, docling_url, log=log, scanned=True)
-            # Docling ne lit pas l'écriture manuscrite : s'il rend trop peu de mots par
-            # page, le modèle vision local (Qwen3-VL) prend le relais.
-            if cfg.vision_url and len(md.split()) < _HANDWRITING_WORDS_PER_PAGE * _page_count(path):
-                from parsing.vlm_ocr import transcribe_pdf
-                if log:
-                    log(f"  … {path.name} : peu de texte lu, lecture par le modèle vision")
-                vlm = transcribe_pdf(path, cfg.vision_url, cfg.vision_api_key, log=log)
+            # Ni l'un ni l'autre : modèle vision quel qu'il soit (CPU, lent) pour le manuscrit.
+            if handwritten and cfg.vision_url:
+                vlm = _vision_read(path, log)
                 if len(vlm.split()) > len(md.split()):
-                    md = vlm
+                    return [(_restored(vlm, log), False)]
             if len(md) >= _PDF_MIN_CHARS:
                 return [(md, False)]
             return [(text, needs_ocr)]

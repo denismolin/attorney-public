@@ -81,8 +81,8 @@ def _cache_path(pdf_hash: str, scanned: bool) -> Path:
 
 def convert_pdf(path: Path, base_url: str, log: Callable[[str], None] | None = None,
                 scanned: bool = False) -> str:
-    """Texte du PDF via Docling (Markdown, ou texte reconstruit pour un scan), ou ""
-    en cas d'échec (l'appelant retombe sur PyMuPDF / la lecture vision)."""
+    """Texte du PDF via Docling (Markdown, ou texte reconstruit pour un scan).
+    None si le service n'a pas pu convertir (injoignable, erreur) ; "" s'il n'a rien lu."""
     data = path.read_bytes()
     pdf_hash = hashlib.sha256(data).hexdigest()
     cache = _cache_path(pdf_hash, scanned)
@@ -108,7 +108,7 @@ def convert_pdf(path: Path, base_url: str, log: Callable[[str], None] | None = N
         print(msg, flush=True)
         if log:
             log(msg)
-        return ""
+        return None
 
     document = body.get("document") or {}
     if scanned:
@@ -118,7 +118,7 @@ def convert_pdf(path: Path, base_url: str, log: Callable[[str], None] | None = N
     if body.get("status") not in (None, "success", "partial_success") or not md:
         if log:
             log(f"  ⚠ Docling n'a rien extrait de {path.name} (statut {body.get('status')}) : repli")
-        return ""
+        return "" if body.get("status") in (None, "success", "partial_success") else None
     EXTRACTED_TEXT_DIR.mkdir(parents=True, exist_ok=True)
     cache.write_text(md, encoding="utf-8")
     if log:

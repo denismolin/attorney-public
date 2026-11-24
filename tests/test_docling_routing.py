@@ -7,7 +7,9 @@ from parsing.eml_parser import Attachment
 
 NATIVE_TEXT = "texte natif " * 20
 DOCLING_MD = "# Titre\n\n| Échéance | Montant |\n|---|---|\n| 2024 | 1 000 € |\n" * 3
+PRINTED_SCAN = "relevé de compte opération solde " * 40          # Docling lit un scan imprimé
 CLAUDE_TEXT = "transcription Claude " * 20
+HANDWRITTEN = "Je soussigné lègue à mon neveu la maison de famille " * 15
 
 
 @pytest.fixture
@@ -20,19 +22,28 @@ def pdf(tmp_path, monkeypatch):
 
 
 def setup(monkeypatch, *, scanned, docling_url, docling_md=DOCLING_MD, claude=CLAUDE_TEXT,
-          vision_url=None, vlm_text=None):
+          vision_url=None, vlm_text=None, strong=False):
     calls = []
     monkeypatch.setattr(A, "_extract_pdf", lambda p: ("", True) if scanned else (NATIVE_TEXT, False))
     monkeypatch.setattr(A.cfg, "docling_url", docling_url)
     monkeypatch.setattr(A.cfg, "vision_url", vision_url)
-    monkeypatch.setattr(D, "convert_pdf", lambda p, url, log=None, scanned=False: calls.append("docling") or docling_md)
+    monkeypatch.setattr(D, "convert_pdf",
+                        lambda p, url, log=None, scanned=False: calls.append("docling") or docling_md)
     import parsing.ocr as ocr
     monkeypatch.setattr(ocr, "extract_text_vision_parts",
                         lambda p, key, log=None: calls.append("claude") or ([claude] if claude else []))
+    from parsing import restore as R
     from parsing import vlm_ocr
     monkeypatch.setattr(vlm_ocr, "transcribe_pdf",
                         lambda p, url, key, log=None: calls.append("vision") or (vlm_text or ""))
+    monkeypatch.setattr(vlm_ocr, "vision_is_strong", lambda url, key: strong)
+    monkeypatch.setattr(R, "restore", lambda text, log=None: calls.append("restore") or "R:" + text)
     return calls
+
+
+def restored(text):
+    from parsing.restore import NOTE
+    return NOTE + "\nR:" + text
 
 
 def test_native_pdf_uses_docling(pdf, monkeypatch):
@@ -42,7 +53,7 @@ def test_native_pdf_uses_docling(pdf, monkeypatch):
 
 
 def test_native_pdf_falls_back_to_pymupdf(pdf, monkeypatch):
-    setup(monkeypatch, scanned=False, docling_url="http://docling:5001", docling_md="")
+    setup(monkeypatch, scanned=False, docling_url="http://docling:5001", docling_md=None)
     assert A.extract_text_parts(pdf, api_key="k") == [(NATIVE_TEXT, False)]
 
 
@@ -52,22 +63,59 @@ def test_native_pdf_without_docling_unchanged(pdf, monkeypatch):
     assert calls == []
 
 
-def test_scan_prefers_claude(pdf, monkeypatch):
-    calls = setup(monkeypatch, scanned=True, docling_url="http://docling:5001")
+def test_printed_scan_keeps_claude(pdf, monkeypatch):
+    calls = setup(monkeypatch, scanned=True, docling_url="http://docling:5001", docling_md=PRINTED_SCAN,
+                  vision_url="http://vision:8000/v1", strong=True)
     assert A.extract_text_parts(pdf, api_key="k") == [(CLAUDE_TEXT, False)]
-    assert calls == ["claude"]
+    assert calls == ["docling", "claude"]
 
 
-def test_scan_falls_back_to_docling_without_key(pdf, monkeypatch):
-    calls = setup(monkeypatch, scanned=True, docling_url="http://docling:5001")
-    assert A.extract_text_parts(pdf, api_key=None) == [(DOCLING_MD, False)]
+def test_printed_scan_without_claude_uses_docling(pdf, monkeypatch):
+    calls = setup(monkeypatch, scanned=True, docling_url="http://docling:5001", docling_md=PRINTED_SCAN)
+    assert A.extract_text_parts(pdf, api_key=None) == [(PRINTED_SCAN, False)]
     assert calls == ["docling"]
 
 
-def test_scan_falls_back_to_docling_when_claude_fails(pdf, monkeypatch):
-    calls = setup(monkeypatch, scanned=True, docling_url="http://docling:5001", claude=None)
-    assert A.extract_text_parts(pdf, api_key="k") == [(DOCLING_MD, False)]
-    assert calls == ["claude", "docling"]
+def test_handwritten_goes_to_strong_vision_first_then_restored(pdf, monkeypatch):
+    calls = setup(monkeypatch, scanned=True, docling_url="http://docling:5001", docling_md="trois mots lus",
+                  vision_url="http://vision:8000/v1", vlm_text=HANDWRITTEN, strong=True)
+    assert A.extract_text_parts(pdf, api_key="k") == [(restored(HANDWRITTEN), False)]
+    assert calls == ["docling", "vision", "restore"]
+
+
+def test_handwritten_with_weak_vision_uses_claude_restored(pdf, monkeypatch):
+    calls = setup(monkeypatch, scanned=True, docling_url="http://docling:5001", docling_md="trois mots",
+                  vision_url="http://vision:8000/v1", vlm_text=HANDWRITTEN, strong=False)
+    assert A.extract_text_parts(pdf, api_key="k") == [(restored(CLAUDE_TEXT), False)]
+    assert calls == ["docling", "claude", "restore"]
+
+
+def test_handwritten_without_claude_falls_back_to_any_vision(pdf, monkeypatch):
+    calls = setup(monkeypatch, scanned=True, docling_url="http://docling:5001", docling_md="", claude=None,
+                  vision_url="http://vision:8000/v1", vlm_text=HANDWRITTEN, strong=False)
+    assert A.extract_text_parts(pdf, api_key="k") == [(restored(HANDWRITTEN), False)]
+    assert calls == ["docling", "claude", "vision", "restore"]
+
+
+def test_docling_down_is_not_handwriting(pdf, monkeypatch):
+    calls = setup(monkeypatch, scanned=True, docling_url="http://docling:5001", docling_md=None,
+                  vision_url="http://vision:8000/v1", vlm_text=HANDWRITTEN, strong=True)
+    assert A.extract_text_parts(pdf, api_key="k") == [(CLAUDE_TEXT, False)]
+    assert calls == ["docling", "claude"]
+
+
+def test_restore_rejects_drift(monkeypatch, tmp_path):
+    from parsing import restore as R
+    monkeypatch.setattr(R, "EXTRACTED_TEXT_DIR", tmp_path)
+
+    class Chat:
+        def __init__(self, out): self.out = out
+        def complete(self, system, messages, tools=None): return {"text": self.out}
+
+    raw = "Je Sussiqui Nauo lègue la maison de Dracel " * 5
+    fixed = raw.replace("Dracel", "Draveil")
+    assert R.restore(raw, chat=Chat(fixed), vocabulary=["Draveil"]) == fixed.strip()
+    assert R.restore(raw, chat=Chat(raw + " et une phrase inventée " * 10), vocabulary=["x"]) == raw
 
 
 def test_local_embedder_uses_per_model_url(monkeypatch):
@@ -83,22 +131,6 @@ def test_local_embedder_uses_per_model_url(monkeypatch):
 
 
 HANDWRITTEN = "Je soussigné lègue à mon neveu la maison de famille " * 15
-
-
-def test_handwritten_scan_goes_to_vision_when_docling_reads_little(pdf, monkeypatch):
-    calls = setup(monkeypatch, scanned=True, docling_url="http://docling:5001", claude=None,
-                  docling_md="Testament quelques mots", vision_url="http://vision:8000/v1",
-                  vlm_text=HANDWRITTEN)
-    assert A.extract_text_parts(pdf, api_key="k") == [(HANDWRITTEN, False)]
-    assert calls == ["claude", "docling", "vision"]
-
-
-def test_vision_not_used_when_docling_reads_enough(pdf, monkeypatch):
-    many = "mot " * 200
-    calls = setup(monkeypatch, scanned=True, docling_url="http://docling:5001", claude=None,
-                  docling_md=many, vision_url="http://vision:8000/v1", vlm_text=HANDWRITTEN)
-    assert A.extract_text_parts(pdf, api_key=None) == [(many, False)]
-    assert "vision" not in calls
 
 
 def test_trim_loops_cuts_model_repetition():
