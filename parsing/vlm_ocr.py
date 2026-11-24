@@ -41,22 +41,24 @@ def _cache_path(pdf_hash: str) -> Path:
     return EXTRACTED_TEXT_DIR / f"{pdf_hash}.vlm-{_CACHE_VERSION}.json"
 
 
-def trim_loops(text: str, n: int = 8, max_repeats: int = 2) -> str:
-    """Coupe une répétition en boucle : dès qu'une suite de `n` mots apparaît plus de
-    `max_repeats` fois, le texte s'arrête avant sa (max_repeats+1)-ième occurrence.
+def trim_loops(text: str, min_repeats: int = 4, max_period: int = 200) -> str:
+    """Coupe une boucle de génération : la fin du texte faite du même bloc de mots
+    répété au moins `min_repeats` fois d'affilée. On garde une seule copie du bloc.
 
-    Un vrai document répète rarement 8 mots à l'identique plus de deux fois ; une
-    boucle de modèle les répète des dizaines de fois.
+    Seule une répétition *consécutive en fin de texte* compte : un relevé bancaire
+    répète légitimement « PRELEVEMENT SEPA … » sur des lignes séparées, une boucle de
+    modèle répète le même bloc jusqu'à la limite de jetons.
     """
     words = text.split()
-    if len(words) < n * (max_repeats + 1):
-        return text
-    seen: dict[tuple, int] = {}
-    for i in range(len(words) - n + 1):
-        key = tuple(w.lower() for w in words[i:i + n])
-        seen[key] = seen.get(key, 0) + 1
-        if seen[key] > max_repeats:
-            return " ".join(words[:i]).rstrip() + " [boucle coupée]"
+    n = len(words)
+    for period in range(1, min(max_period, n // min_repeats) + 1):
+        block = words[n - period:]
+        reps = 1
+        while (reps + 1) * period <= n and words[n - (reps + 1) * period:n - reps * period] == block:
+            reps += 1
+        if reps >= min_repeats:
+            keep = n - reps * period + period
+            return " ".join(words[:keep]).rstrip() + " [boucle coupée]"
     return text
 
 

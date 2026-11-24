@@ -106,5 +106,11 @@ def test_trim_loops_cuts_model_repetition():
     real = "Article 1 la somme de mille euros est due au créancier. " * 2
     loop = real + "et le présent acte est fait et passé à Nice le " * 40
     out = trim_loops(loop)
-    assert out.endswith("[boucle coupée]") and len(out.split()) < 60
+    assert out.endswith("[boucle coupée]") and len(out.split()) < 40
     assert trim_loops(real) == real
+
+
+def test_trim_loops_keeps_repeated_statement_lines():
+    from parsing.vlm_ocr import trim_loops
+    lines = "".join(f"PRELEVEMENT SEPA EDF CLIENTS PARTICULIERS REF {i} 45,20 EUR\n" for i in range(30))
+    assert trim_loops(lines) == lines
