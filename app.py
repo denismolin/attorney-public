@@ -1483,7 +1483,7 @@ def api_settings_get():
 # Champs texte (non secrets) modifiables via l'UI.
 _SETTINGS_TEXT_FIELDS = (
     "embed_provider", "chat_provider", "embed_model", "chat_model",
-    "mistral_chat_model", "vllm_base_url", "docling_url",
+    "mistral_chat_model", "vllm_base_url", "docling_url", "vision_url",
 )
 
 
@@ -1518,6 +1518,8 @@ def api_settings_test():
         return jsonify({"ok": False, "error": "provider manquant"}), 400
     if provider == "docling":
         return jsonify(_test_docling())
+    if provider == "vision":
+        return jsonify(_test_vision())
     if provider == "local":
         return jsonify(_test_local_embedding())
     models, err = _fetch_models_for_provider(provider)
@@ -1538,6 +1540,21 @@ def _test_docling() -> dict:
         return {"ok": True, "message": "Docling répond."}
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "error": f"Docling injoignable ({type(exc).__name__}) — poste de travail en veille ?"}
+
+
+def _test_vision() -> dict:
+    url = (cfg.vision_url or "").rstrip("/")
+    if not url:
+        return {"ok": False, "error": "Lecture vision désactivée (adresse vide)."}
+    try:
+        import httpx
+        r = httpx.get(url + "/models", timeout=5.0,
+                      headers={"Authorization": f"Bearer {cfg.vision_api_key}"} if cfg.vision_api_key else {})
+        r.raise_for_status()
+        ids = [m.get("id") for m in r.json().get("data", [])]
+        return {"ok": True, "message": "Modèle vision prêt : " + (", ".join(i for i in ids if i) or "?")}
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": f"Modèle vision injoignable ({type(exc).__name__}) — poste de travail en veille ?"}
 
 
 def _test_local_embedding() -> dict:

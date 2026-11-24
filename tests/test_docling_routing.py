@@ -19,14 +19,19 @@ def pdf(tmp_path, monkeypatch):
     return Attachment("d1", "doc.pdf", "application/pdf", 10, "x", "e1")
 
 
-def setup(monkeypatch, *, scanned, docling_url, docling_md=DOCLING_MD, claude=CLAUDE_TEXT):
+def setup(monkeypatch, *, scanned, docling_url, docling_md=DOCLING_MD, claude=CLAUDE_TEXT,
+          vision_url=None, vlm_text=None):
     calls = []
     monkeypatch.setattr(A, "_extract_pdf", lambda p: ("", True) if scanned else (NATIVE_TEXT, False))
     monkeypatch.setattr(A.cfg, "docling_url", docling_url)
+    monkeypatch.setattr(A.cfg, "vision_url", vision_url)
     monkeypatch.setattr(D, "convert_pdf", lambda p, url, log=None: calls.append("docling") or docling_md)
     import parsing.ocr as ocr
     monkeypatch.setattr(ocr, "extract_text_vision_parts",
                         lambda p, key, log=None: calls.append("claude") or ([claude] if claude else []))
+    from parsing import vlm_ocr
+    monkeypatch.setattr(vlm_ocr, "transcribe_pdf",
+                        lambda p, url, key, log=None: calls.append("vision") or (vlm_text or ""))
     return calls
 
 
@@ -75,3 +80,31 @@ def test_local_embedder_uses_per_model_url(monkeypatch):
     assert str(e._client.base_url).rstrip("/") == "http://tei-bge:8080/v1"
     with pytest.raises(ValueError):
         P.get_embedder(replace(c, embed_model="inconnu"))
+
+
+HANDWRITTEN = "Je soussigné lègue à mon neveu la maison de famille " * 15
+
+
+def test_handwritten_scan_goes_to_vision_when_docling_reads_little(pdf, monkeypatch):
+    calls = setup(monkeypatch, scanned=True, docling_url="http://docling:5001", claude=None,
+                  docling_md="Testament quelques mots", vision_url="http://vision:8000/v1",
+                  vlm_text=HANDWRITTEN)
+    assert A.extract_text_parts(pdf, api_key="k") == [(HANDWRITTEN, False)]
+    assert calls == ["claude", "docling", "vision"]
+
+
+def test_vision_not_used_when_docling_reads_enough(pdf, monkeypatch):
+    many = "mot " * 200
+    calls = setup(monkeypatch, scanned=True, docling_url="http://docling:5001", claude=None,
+                  docling_md=many, vision_url="http://vision:8000/v1", vlm_text=HANDWRITTEN)
+    assert A.extract_text_parts(pdf, api_key=None) == [(many, False)]
+    assert "vision" not in calls
+
+
+def test_trim_loops_cuts_model_repetition():
+    from parsing.vlm_ocr import trim_loops
+    real = "Article 1 la somme de mille euros est due au créancier. " * 2
+    loop = real + "et le présent acte est fait et passé à Nice le " * 40
+    out = trim_loops(loop)
+    assert out.endswith("[boucle coupée]") and len(out.split()) < 60
+    assert trim_loops(real) == real

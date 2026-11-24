@@ -110,7 +110,19 @@
               style="margin-top:0.3rem;">Tester</button>
       <span class="test-result" data-provider="docling" style="font-size:0.82rem;"></span>
     </label>
+    <label>Modèle vision local (scans manuscrits)
+      <input id="vision_url" class="eval-select" value="{{ settings.vision_url or '' }}"
+             placeholder="vide = désactivé">
+      <button type="button" class="btn-secondary test-btn" data-provider="vision"
+              style="margin-top:0.3rem;">Tester</button>
+      <span class="test-result" data-provider="vision" style="font-size:0.82rem;"></span>
+    </label>
   </div>
+  <p class="muted" style="font-size:0.85rem;">
+    Quand Claude n'a pas transcrit un scan et que Docling n'y lit presque rien (écriture
+    manuscrite), Qwen3-VL le lit page par page : 1 à 6 min par page sur processeur,
+    quelques secondes quand il tourne sur la carte graphique.
+  </p>
 
   <div style="margin-top:1.4rem; display:flex; gap:0.8rem; align-items:center;">
     <button id="savebtn">Enregistrer</button>
