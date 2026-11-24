@@ -116,6 +116,9 @@ class Config:
         default_factory=lambda: _get("VLLM_API_KEY") or _get("LOCAL_TOKEN") or "EMPTY"
     )
 
+    # Docling (extraction structurée + OCR local des PDF). Vide = désactivé.
+    docling_url: str | None = field(default_factory=lambda: _get("DOCLING_URL"))
+
     # ChromaDB
     chroma_host: str = field(default_factory=lambda: _get("CHROMA_HOST", "localhost"))
     chroma_port: int = field(default_factory=lambda: int(_get("CHROMA_PORT", "8000")))

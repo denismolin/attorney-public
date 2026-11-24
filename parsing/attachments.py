@@ -2,6 +2,9 @@
 
 Jalon 1 : PDF natif (PyMuPDF), DOCX, RTF, TXT.
 Jalon 2 : PDF scanné → OCR via Claude Vision (parsing/ocr.py) si ANTHROPIC_API_KEY est configurée.
+Jalon 3 : si DOCLING_URL est réglé, Docling (parsing/docling.py) extrait les PDF natifs
+(structure + tableaux, repli PyMuPDF) et sert de repli OCR local pour les scans quand
+Claude Vision n'est pas configuré ou échoue.
 
 L'OCR (appel payant à Claude Vision) est mis en cache sur disque sous
 EXTRACTED_TEXT_DIR, indexé par le hash du PDF source : une réindexation d'une
@@ -14,7 +17,7 @@ import json
 from pathlib import Path
 from typing import Callable
 
-from config import EXTRACTED_TEXT_DIR, GENERATED_DIR
+from config import EXTRACTED_TEXT_DIR, GENERATED_DIR, cfg
 from parsing.eml_parser import Attachment
 
 # Seuil : en dessous de N caractères extraits d'un PDF, on considère que c'est
@@ -127,7 +130,18 @@ def extract_text_parts(
     try:
         if suffix == ".pdf" or mime == "application/pdf":
             text, needs_ocr = _extract_pdf(path)
-            if needs_ocr and api_key:
+            docling_url = cfg.docling_url
+            if not needs_ocr:
+                # PDF natif : Docling apporte la structure (titres, tableaux) ; repli PyMuPDF.
+                if docling_url:
+                    from parsing.docling import convert_pdf
+                    md = convert_pdf(path, docling_url, log=log)
+                    if len(md) >= _PDF_MIN_CHARS:
+                        return [(md, False)]
+                return [(text, False)]
+            # Scan : Claude Vision lit nettement mieux nos scans (manuscrit, mauvaise
+            # qualité : jusqu'à 2x plus de mots que RapidOCR) ; Docling sert de repli.
+            if api_key:
                 pdf_hash = hashlib.sha256(path.read_bytes()).hexdigest()
                 cached = _load_ocr_cache(pdf_hash)
                 if cached is not None:
@@ -142,6 +156,11 @@ def extract_text_parts(
                 valid = [(t, False) for t in ocr_parts if len(t) >= _PDF_MIN_CHARS]
                 if valid:
                     return valid
+            if docling_url:
+                from parsing.docling import convert_pdf
+                md = convert_pdf(path, docling_url, log=log)
+                if len(md) >= _PDF_MIN_CHARS:
+                    return [(md, False)]
             return [(text, needs_ocr)]
         if suffix == ".docx" or "wordprocessingml" in mime:
             return [(_extract_docx(path), False)]
