@@ -161,3 +161,32 @@ def _render_page(path: Path, index: int, dpi: int) -> bytes | None:
             return page.get_pixmap(matrix=fitz.Matrix(zoom, zoom), colorspace=fitz.csRGB).tobytes("png")
     except Exception:  # noqa: BLE001
         return None
+
+
+_STRONG = {"t": 0.0, "url": "", "v": False}
+# Modèles assez forts pour passer avant Claude sur le manuscrit (mesuré : 8B et 30B-A3B
+# rendent un texte juridique cohérent ; le 4B écorche trop de mots).
+_STRONG_MARKERS = ("8B", "14B", "30B", "32B", "72B")
+
+
+def vision_is_strong(url: str, api_key: str | None) -> bool:
+    """Le service vision sert-il un grand modèle (mode GPU) ? Lu sur /props de llama.cpp,
+    gardé 60 s."""
+    import time
+
+    import httpx
+
+    if _STRONG["url"] == url and time.time() - _STRONG["t"] < 60:
+        return _STRONG["v"]
+    base = url.rstrip("/").removesuffix("/v1")
+    strong = False
+    try:
+        r = httpx.get(base + "/props", timeout=5.0,
+                      headers={"Authorization": f"Bearer {api_key}"} if api_key else {})
+        r.raise_for_status()
+        name = Path(r.json().get("model_path") or "").name
+        strong = any(m.lower() in name.lower() for m in _STRONG_MARKERS)
+    except Exception:  # noqa: BLE001 - service absent : pas fort
+        strong = False
+    _STRONG.update(t=time.time(), url=url, v=strong)
+    return strong
