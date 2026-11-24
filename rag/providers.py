@@ -206,6 +206,15 @@ def get_embedder(config: Config = cfg) -> Embedder:
         return _OpenAICompatEmbedder(
             config.embed_model, config.vllm_api_key, base_url=config.vllm_embed_base_url
         )
+    if provider == "local":
+        # TEI de la pile, joint directement sur le réseau local (pas de clé).
+        url = config.local_embed_urls.get(config.embed_model)
+        if not url:
+            raise ValueError(
+                f"Modèle d'embedding local inconnu ou non configuré : {config.embed_model!r} "
+                f"(disponibles : {', '.join(sorted(config.local_embed_urls)) or 'aucun'})."
+            )
+        return _OpenAICompatEmbedder(config.embed_model, "EMPTY", base_url=url)
     if provider == "mistral":
         return _MistralEmbedder(config.embed_model, config.mistral_api_key)
     if provider == "anthropic":

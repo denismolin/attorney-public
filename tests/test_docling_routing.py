@@ -63,3 +63,15 @@ def test_scan_falls_back_to_docling_when_claude_fails(pdf, monkeypatch):
     calls = setup(monkeypatch, scanned=True, docling_url="http://docling:5001", claude=None)
     assert A.extract_text_parts(pdf, api_key="k") == [(DOCLING_MD, False)]
     assert calls == ["claude", "docling"]
+
+
+def test_local_embedder_uses_per_model_url(monkeypatch):
+    from dataclasses import replace
+    from config import cfg
+    from rag import providers as P
+    c = replace(cfg, embed_provider="local", embed_model="BAAI/bge-m3",
+                local_embed_urls={"BAAI/bge-m3": "http://tei-bge:8080/v1"})
+    e = P.get_embedder(c)
+    assert str(e._client.base_url).rstrip("/") == "http://tei-bge:8080/v1"
+    with pytest.raises(ValueError):
+        P.get_embedder(replace(c, embed_model="inconnu"))

@@ -46,6 +46,7 @@ const _root = (window.APP_ROOT || "").replace(/\/$/, ""); function api(path) { r
       chat_model: val("chat_model"),
       mistral_chat_model: val("mistral_chat_model"),
       vllm_base_url: val("vllm_base_url"),
+      docling_url: val("docling_url"),
       keys: {
         openai: val("key_openai"),
         anthropic: val("key_anthropic"),
@@ -109,7 +110,7 @@ const _root = (window.APP_ROOT || "").replace(/\/$/, ""); function api(path) { r
         const data = await resp.json();
         if (out) {
           if (data.ok) {
-            out.textContent = " ✓ OK — " + data.n_models + " modèle(s)";
+            out.textContent = " ✓ " + (data.message || ("OK — " + data.n_models + " modèle(s)"));
             out.className = "test-result ok";
           } else {
             out.textContent = " ✗ " + (data.error || "échec");

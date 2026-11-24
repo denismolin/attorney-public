@@ -47,6 +47,7 @@ MANAGED_FIELDS = (
 # sans rapport : tant que l'UI n'y touche pas, le .env / docker-compose fait foi
 # (ex. CHROMA_HOST=chromadb posé par docker-compose).
 EXPLICIT_FIELDS = (
+    "docling_url",
     "chroma_host", "chroma_port", "chroma_ssl", "chroma_auth_header",
     "imap_enabled", "imap_host", "imap_port", "imap_ssl", "imap_user", "imap_password",
     "imap_folder", "imap_poll_interval", "imap_processed_action", "imap_processed_folder",
@@ -118,6 +119,14 @@ class Config:
 
     # Docling (extraction structurée + OCR local des PDF). Vide = désactivé.
     docling_url: str | None = field(default_factory=lambda: _get("DOCLING_URL"))
+    # Embeddings « local » : services TEI de la pile (poste de travail), un URL par
+    # modèle (TEI sert un seul modèle par URL). Posés par docker-compose.
+    local_embed_urls: dict = field(default_factory=lambda: {
+        k: v for k, v in {
+            "intfloat/multilingual-e5-large": _get("EMBED_URL_E5"),
+            "BAAI/bge-m3": _get("EMBED_URL_BGE_M3"),
+        }.items() if v
+    })
 
     # ChromaDB
     chroma_host: str = field(default_factory=lambda: _get("CHROMA_HOST", "localhost"))
@@ -307,6 +316,8 @@ class Config:
             "chat_model": self.chat_model,
             "mistral_chat_model": self.mistral_chat_model,
             "vllm_base_url": self.vllm_base_url or "",
+            "docling_url": self.docling_url or "",
+            "local_embed_models": sorted(self.local_embed_urls),
             "key_status": {prov: self._mask(getattr(self, field_))
                            for prov, field_ in KEY_FIELDS.items()},
             "chroma": {
