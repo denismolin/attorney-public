@@ -23,6 +23,31 @@ def _batched(items: list, size: int):
         yield items[i : i + size]
 
 
+class QuotaExceeded(RuntimeError):
+    """Le fournisseur refuse faute de crédit / limite de dépense : réessayer ne sert à rien."""
+
+
+# Codes renvoyés en 429 quand le compte est à court de crédit (OpenAI) ou bloqué ;
+# à la différence d'un vrai rate limit, attendre ne change rien.
+_QUOTA_MARKERS = ("insufficient_quota", "spend_limit", "billing_hard_limit", "exceeded your current quota")
+
+
+def _is_quota_error(exc: Exception) -> bool:
+    body = getattr(exc, "body", None)
+    if isinstance(body, dict):
+        err = body.get("error", body)
+        if isinstance(err, dict):
+            text = " ".join(str(err.get(k) or "") for k in ("type", "code", "message"))
+            if any(m in text.lower() for m in _QUOTA_MARKERS):
+                return True
+    return any(m in str(exc).lower() for m in _QUOTA_MARKERS)
+
+
+def _quota_message(what: str) -> str:
+    return (f"Quota du fournisseur épuisé ({what}) : la limite de dépense du compte est atteinte. "
+            "Augmentez la limite ou ajoutez du crédit chez le fournisseur, puis réessayez.")
+
+
 def _with_retry(fn, *, what: str = "embedding", log=None):
     """Exécute `fn` avec retry + backoff exponentiel.
 
@@ -44,6 +69,13 @@ def _with_retry(fn, *, what: str = "embedding", log=None):
                 getattr(exc, "response", None), "status_code", None
             )
             name = type(exc).__name__
+            if _is_quota_error(exc):
+                # Crédit épuisé : échec immédiat et message clair, pas 2 min de backoff.
+                msg = f"[{what}] quota épuisé, abandon sans retry [{name}]"
+                print(msg, flush=True)
+                if log:
+                    log(msg)
+                raise QuotaExceeded(_quota_message(what)) from exc
             # Connexion refusée (TEI down/redémarre) ou statut transitoire -> retry.
             is_conn_error = "Connection" in name or "Timeout" in name or "Connect" in name
             transient = is_conn_error or status in (429, 500, 502, 503, 504) or status is None
