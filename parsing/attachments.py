@@ -4,7 +4,8 @@ Jalon 1 : PDF natif (PyMuPDF), DOCX, RTF, TXT.
 Jalon 2 : PDF scanné → OCR via Claude Vision (parsing/ocr.py) si ANTHROPIC_API_KEY est configurée.
 Jalon 3 : si DOCLING_URL est réglé, Docling (parsing/docling.py) extrait les PDF natifs
 (structure + tableaux, repli PyMuPDF) et sert de repli OCR local pour les scans quand
-Claude Vision n'est pas configuré ou échoue.
+Claude Vision n'est pas configuré ou échoue ; si Docling lit trop peu (manuscrit),
+le modèle vision local (parsing/vlm_ocr.py, VISION_URL) prend le relais.
 
 L'OCR (appel payant à Claude Vision) est mis en cache sur disque sous
 EXTRACTED_TEXT_DIR, indexé par le hash du PDF source : une réindexation d'une
@@ -23,6 +24,19 @@ from parsing.eml_parser import Attachment
 # Seuil : en dessous de N caractères extraits d'un PDF, on considère que c'est
 # un scan (texte non sélectionnable) → needs_ocr.
 _PDF_MIN_CHARS = 40
+# En dessous de ce nombre de mots par page, l'OCR de Docling a probablement buté sur
+# de l'écriture manuscrite (testament : 3 à 37 mots, contre ~170 réellement).
+_HANDWRITING_WORDS_PER_PAGE = 60
+
+
+def _page_count(path: Path) -> int:
+    import fitz  # PyMuPDF
+
+    try:
+        with fitz.open(str(path)) as doc:
+            return max(1, len(doc))
+    except Exception:  # noqa: BLE001
+        return 1
 
 
 def _ocr_cache_path(pdf_hash: str) -> Path:
@@ -156,11 +170,21 @@ def extract_text_parts(
                 valid = [(t, False) for t in ocr_parts if len(t) >= _PDF_MIN_CHARS]
                 if valid:
                     return valid
+            md = ""
             if docling_url:
                 from parsing.docling import convert_pdf
-                md = convert_pdf(path, docling_url, log=log)
-                if len(md) >= _PDF_MIN_CHARS:
-                    return [(md, False)]
+                md = convert_pdf(path, docling_url, log=log, scanned=True)
+            # Docling ne lit pas l'écriture manuscrite : s'il rend trop peu de mots par
+            # page, le modèle vision local (Qwen3-VL) prend le relais.
+            if cfg.vision_url and len(md.split()) < _HANDWRITING_WORDS_PER_PAGE * _page_count(path):
+                from parsing.vlm_ocr import transcribe_pdf
+                if log:
+                    log(f"  … {path.name} : peu de texte lu, lecture par le modèle vision")
+                vlm = transcribe_pdf(path, cfg.vision_url, cfg.vision_api_key, log=log)
+                if len(vlm.split()) > len(md.split()):
+                    md = vlm
+            if len(md) >= _PDF_MIN_CHARS:
+                return [(md, False)]
             return [(text, needs_ocr)]
         if suffix == ".docx" or "wordprocessingml" in mime:
             return [(_extract_docx(path), False)]

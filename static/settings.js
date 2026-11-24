@@ -47,6 +47,7 @@ const _root = (window.APP_ROOT || "").replace(/\/$/, ""); function api(path) { r
       mistral_chat_model: val("mistral_chat_model"),
       vllm_base_url: val("vllm_base_url"),
       docling_url: val("docling_url"),
+      vision_url: val("vision_url"),
       keys: {
         openai: val("key_openai"),
         anthropic: val("key_anthropic"),
