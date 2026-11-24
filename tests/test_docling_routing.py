@@ -25,7 +25,7 @@ def setup(monkeypatch, *, scanned, docling_url, docling_md=DOCLING_MD, claude=CL
     monkeypatch.setattr(A, "_extract_pdf", lambda p: ("", True) if scanned else (NATIVE_TEXT, False))
     monkeypatch.setattr(A.cfg, "docling_url", docling_url)
     monkeypatch.setattr(A.cfg, "vision_url", vision_url)
-    monkeypatch.setattr(D, "convert_pdf", lambda p, url, log=None: calls.append("docling") or docling_md)
+    monkeypatch.setattr(D, "convert_pdf", lambda p, url, log=None, scanned=False: calls.append("docling") or docling_md)
     import parsing.ocr as ocr
     monkeypatch.setattr(ocr, "extract_text_vision_parts",
                         lambda p, key, log=None: calls.append("claude") or ([claude] if claude else []))
@@ -114,3 +114,19 @@ def test_trim_loops_keeps_repeated_statement_lines():
     from parsing.vlm_ocr import trim_loops
     lines = "".join(f"PRELEVEMENT SEPA EDF CLIENTS PARTICULIERS REF {i} 45,20 EUR\n" for i in range(30))
     assert trim_loops(lines) == lines
+
+
+def test_json_to_text_keeps_headers_footers_and_tables():
+    doc = {"texts": [
+        {"label": "text", "text": "Solde créditeur", "prov": [{"page_no": 1, "bbox": {"t": 500, "coord_origin": "BOTTOMLEFT"}}]},
+        {"label": "page_footer", "text": "Édité le 03/01/2019", "prov": [{"page_no": 1, "bbox": {"t": 20}}]},
+        {"label": "page_header", "text": "LA BANQUE POSTALE", "prov": [{"page_no": 1, "bbox": {"t": 800}}]},
+        {"label": "text", "text": "Page deux", "prov": [{"page_no": 2, "bbox": {"t": 700}}]},
+    ], "tables": [{"prov": [{"page_no": 1, "bbox": {"t": 400}}], "data": {"table_cells": [
+        {"text": "Date", "start_row_offset_idx": 0, "start_col_offset_idx": 0},
+        {"text": "Montant", "start_row_offset_idx": 0, "start_col_offset_idx": 1},
+        {"text": "02/01", "start_row_offset_idx": 1, "start_col_offset_idx": 0},
+        {"text": "45,20", "start_row_offset_idx": 1, "start_col_offset_idx": 1}]}}]}
+    from parsing.docling import json_to_text
+    assert json_to_text(doc) == ("LA BANQUE POSTALE\nSolde créditeur\nDate | Montant\n02/01 | 45,20\n"
+                                 "Édité le 03/01/2019\n\nPage deux")

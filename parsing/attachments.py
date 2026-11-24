@@ -173,7 +173,7 @@ def extract_text_parts(
             md = ""
             if docling_url:
                 from parsing.docling import convert_pdf
-                md = convert_pdf(path, docling_url, log=log)
+                md = convert_pdf(path, docling_url, log=log, scanned=True)
             # Docling ne lit pas l'écriture manuscrite : s'il rend trop peu de mots par
             # page, le modèle vision local (Qwen3-VL) prend le relais.
             if cfg.vision_url and len(md.split()) < _HANDWRITING_WORDS_PER_PAGE * _page_count(path):
