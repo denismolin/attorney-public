@@ -1453,6 +1453,7 @@ def api_migrate_import():
 # Modèles d'embedding proposés par provider (page Réglages). Le modèle courant
 # reste sélectionnable même s'il n'est pas listé (index existant).
 EMBED_MODELS = {
+    "local": ["intfloat/multilingual-e5-large", "BAAI/bge-m3"],
     "openai": ["text-embedding-3-large", "text-embedding-3-small"],
     "mistral": ["mistral-embed"],
     "vllm": ["intfloat/multilingual-e5-large", "BAAI/bge-m3"],
@@ -1482,7 +1483,7 @@ def api_settings_get():
 # Champs texte (non secrets) modifiables via l'UI.
 _SETTINGS_TEXT_FIELDS = (
     "embed_provider", "chat_provider", "embed_model", "chat_model",
-    "mistral_chat_model", "vllm_base_url",
+    "mistral_chat_model", "vllm_base_url", "docling_url",
 )
 
 
@@ -1515,11 +1516,45 @@ def api_settings_test():
     provider = (payload.get("provider") or "").strip().lower()
     if not provider:
         return jsonify({"ok": False, "error": "provider manquant"}), 400
+    if provider == "docling":
+        return jsonify(_test_docling())
+    if provider == "local":
+        return jsonify(_test_local_embedding())
     models, err = _fetch_models_for_provider(provider)
     if err:
         return jsonify({"ok": False, "error": err})
     return jsonify({"ok": True, "n_models": len(models),
                     "sample": models[:5]})
+
+
+def _test_docling() -> dict:
+    url = (cfg.docling_url or "").rstrip("/")
+    if not url:
+        return {"ok": False, "error": "Docling désactivé (adresse vide)."}
+    try:
+        import httpx
+        r = httpx.get(url + "/health", timeout=5.0)
+        r.raise_for_status()
+        return {"ok": True, "message": "Docling répond."}
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": f"Docling injoignable ({type(exc).__name__}) — poste de travail en veille ?"}
+
+
+def _test_local_embedding() -> dict:
+    """Embede un mot avec chaque modèle local configuré."""
+    from dataclasses import replace
+    from rag.providers import get_embedder
+    results, ok = [], True
+    for model in sorted(cfg.local_embed_urls):
+        try:
+            vec = get_embedder(replace(cfg, embed_provider="local", embed_model=model)).embed(["test"])[0]
+            results.append(f"{model.split('/')[-1]} : OK ({len(vec)} dim.)")
+        except Exception as exc:  # noqa: BLE001
+            ok = False
+            results.append(f"{model.split('/')[-1]} : injoignable ({type(exc).__name__})")
+    if not results:
+        return {"ok": False, "error": "Aucun modèle local configuré (EMBED_URL_E5 / EMBED_URL_BGE_M3)."}
+    return {"ok": ok, "message": " · ".join(results), "error": None if ok else " · ".join(results)}
 
 
 # --------------------------------------------------------------------------- #

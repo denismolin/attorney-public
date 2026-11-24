@@ -17,8 +17,8 @@
   <div class="eval-form-grid" style="max-width:760px;">
     <label>Provider d'embedding
       <select id="embed_provider" class="eval-select">
-        {% for p in ["openai", "mistral", "vllm"] %}
-        <option value="{{ p }}"{% if settings.embed_provider == p %} selected{% endif %}>{{ p }}</option>
+        {% for p, label in [("local", "local (poste de travail, gratuit)"), ("openai", "openai"), ("mistral", "mistral"), ("vllm", "vllm (autre endpoint)")] %}
+        <option value="{{ p }}"{% if settings.embed_provider == p %} selected{% endif %}>{{ label }}</option>
         {% endfor %}
       </select>
     </label>
@@ -52,6 +52,14 @@
     le modèle déployé. Changer le modèle d'embedding rend les vecteurs déjà indexés
     incohérents — à n'utiliser qu'en cohérence avec une (ré)indexation ou un import.
   </p>
+  <p class="muted" style="font-size:0.85rem;">
+    <strong>local</strong> : e5 ou bge-m3 sur le poste de travail — gratuit, rien ne quitte la
+    maison, mais chaque question du chat a besoin du poste de travail allumé.
+    <strong>openai</strong> : meilleure recherche, fonctionne poste éteint, payant.
+    Après un changement : <em>Indexation → Réinitialiser</em>, puis relancer l'indexation.
+    <button type="button" class="btn-secondary test-btn" data-provider="local">Tester local</button>
+    <span class="test-result" data-provider="local" style="font-size:0.82rem;"></span>
+  </p>
 
   {# ─── Clés API ─────────────────────────────────────────────────────────── #}
   <h2 style="margin-top:1.4rem;">Clés API</h2>
@@ -84,6 +92,23 @@
       <button type="button" class="btn-secondary test-btn" data-provider="vllm"
               style="margin-top:0.3rem;">Tester</button>
       <span class="test-result" data-provider="vllm" style="font-size:0.82rem;"></span>
+    </label>
+  </div>
+
+  {# ─── Docling ──────────────────────────────────────────────────────────── #}
+  <h2 style="margin-top:1.4rem;">Extraction des PDF (Docling)</h2>
+  <p class="muted" style="font-size:0.85rem;">
+    Docling (poste de travail) lit les PDF natifs avec leur structure : titres, tableaux.
+    Les scans restent transcrits par Claude ; Docling sert de repli. Adresse vide = désactivé
+    (PyMuPDF seul). Poste en veille : repli automatique, l'indexation continue.
+  </p>
+  <div class="eval-form-grid" style="max-width:760px;">
+    <label>Adresse du service Docling
+      <input id="docling_url" class="eval-select" value="{{ settings.docling_url or '' }}"
+             placeholder="vide = désactivé">
+      <button type="button" class="btn-secondary test-btn" data-provider="docling"
+              style="margin-top:0.3rem;">Tester</button>
+      <span class="test-result" data-provider="docling" style="font-size:0.82rem;"></span>
     </label>
   </div>
 
