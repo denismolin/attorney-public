@@ -10,6 +10,34 @@ const _root = (window.APP_ROOT || "").replace(/\/$/, ""); function api(path) { r
     return el ? el.value.trim() : "";
   }
 
+  // Modèle d'embedding : liste dépendant du provider choisi. Le modèle courant
+  // (celui de l'index) reste proposé, marqué « actuel », même s'il n'est pas listé.
+  const embedProv = document.getElementById("embed_provider");
+  const embedModel = document.getElementById("embed_model");
+  function fillEmbedModels(keepSelection) {
+    if (!embedProv || !embedModel || embedModel.tagName !== "SELECT") return;
+    let lists = {};
+    try { lists = JSON.parse(embedModel.dataset.models || "{}"); } catch (e) { lists = {}; }
+    const current = embedModel.dataset.current || "";
+    const chosen = keepSelection ? embedModel.value : "";
+    const models = (lists[embedProv.value] || []).slice();
+    if (current && embedProv.value === embedProv.dataset.initial && !models.includes(current)) models.unshift(current);
+    embedModel.innerHTML = "";
+    models.forEach((m) => {
+      const o = document.createElement("option");
+      o.value = m;
+      o.textContent = m === current ? m + " (actuel)" : m;
+      embedModel.appendChild(o);
+    });
+    const pick = models.includes(chosen) ? chosen : models.includes(current) ? current : models[0];
+    if (pick) embedModel.value = pick;
+  }
+  if (embedProv) {
+    embedProv.dataset.initial = embedProv.value;
+    embedProv.addEventListener("change", () => fillEmbedModels(false));
+    fillEmbedModels(true);
+  }
+
   function collect() {
     return {
       embed_provider: val("embed_provider"),

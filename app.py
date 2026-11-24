@@ -1450,6 +1450,15 @@ def api_migrate_import():
         tmp.unlink(missing_ok=True)
 
 
+# Modèles d'embedding proposés par provider (page Réglages). Le modèle courant
+# reste sélectionnable même s'il n'est pas listé (index existant).
+EMBED_MODELS = {
+    "openai": ["text-embedding-3-large", "text-embedding-3-small"],
+    "mistral": ["mistral-embed"],
+    "vllm": ["intfloat/multilingual-e5-large", "BAAI/bge-m3"],
+}
+
+
 # --------------------------------------------------------------------------- #
 # Réglages (providers, clés API, modèles) — appliqués à chaud
 # --------------------------------------------------------------------------- #
@@ -1460,6 +1469,7 @@ def settings_page():
         "settings.html",
         settings=cfg.public_dict(),
         available_providers=_available_providers(),
+        embed_models=EMBED_MODELS,
     )
 
 
