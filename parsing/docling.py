@@ -24,11 +24,16 @@ _OPTIONS = {
     "ocr_engine": "rapidocr",
     "image_export_mode": "placeholder",
     "table_mode": "accurate",
+    # Lecteur PDF : sur nos scans, le lecteur par défaut perd du texte (13 p. : 44 %
+    # du texte de Claude) ; pypdfium2 en récupère 82 %, sans perte sur les autres.
+    "pdf_backend": "pypdfium2",
 }
+# Change quand les options changent : les extractions en cache sont refaites.
+_CACHE_VERSION = "v2"
 
 
 def _cache_path(pdf_hash: str) -> Path:
-    return EXTRACTED_TEXT_DIR / f"{pdf_hash}.docling.md"
+    return EXTRACTED_TEXT_DIR / f"{pdf_hash}.docling-{_CACHE_VERSION}.md"
 
 
 def convert_pdf(path: Path, base_url: str, log: Callable[[str], None] | None = None) -> str:
