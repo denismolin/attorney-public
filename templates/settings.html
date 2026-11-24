@@ -23,8 +23,11 @@
       </select>
     </label>
     <label>Modèle d'embedding
-      <input id="embed_model" class="eval-select" value="{{ settings.embed_model or '' }}"
-             placeholder="ex. text-embedding-3-large">
+      <select id="embed_model" class="eval-select"
+              data-current="{{ settings.embed_model or '' }}"
+              data-models='{{ embed_models | tojson }}'>
+        <option value="{{ settings.embed_model or '' }}" selected>{{ settings.embed_model or '—' }}</option>
+      </select>
     </label>
 
     <label>Provider de chat
